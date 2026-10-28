@@ -12,6 +12,7 @@ export default tseslint.config(
       'supabase/functions/**',
       'babel.config.js',
       'jest.config.js',
+      'jest.setup.js',
     ],
   },
   js.configs.recommended,

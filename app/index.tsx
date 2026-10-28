@@ -1,63 +1,38 @@
-import { StyleSheet, Text, View } from 'react-native';
-import { APP_CURRENCY, APP_TIMEZONE } from '@/config/constants';
+import { Redirect } from 'expo-router';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { useFinanceStore } from '@/features/finance/use-finance-store';
 
-export default function IndexScreen() {
-  return (
-    <View style={styles.container}>
-      <Text style={styles.badge}>FASE 1 • FUNDAÇÃO CONCLUÍDA</Text>
-      <Text style={styles.title}>Financeiro Inteligente</Text>
-      <Text style={styles.subtitle}>
-        Gestão financeira pessoal, comparação de preços via NFC-e, metas e Orientador
-        Financeiro.
-      </Text>
-      <View style={styles.metaBox}>
-        <Text style={styles.metaText}>Moeda padrão: {APP_CURRENCY} (R$)</Text>
-        <Text style={styles.metaText}>Fuso horário: {APP_TIMEZONE}</Text>
+export default function IndexGateScreen() {
+  const isHydrated = useFinanceStore((s) => s.isHydrated);
+  const profile = useFinanceStore((s) => s.profile);
+
+  if (!isHydrated) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#34D399" />
+        <Text style={styles.loadingText}>Carregando seu ambiente financeiro...</Text>
       </View>
-    </View>
-  );
+    );
+  }
+
+  if (!profile || !profile.onboarding_completed) {
+    return <Redirect href="/(auth)/welcome" />;
+  }
+
+  return <Redirect href="/(tabs)" />;
 }
 
 const styles = StyleSheet.create({
-  container: {
+  loadingContainer: {
     flex: 1,
     backgroundColor: '#0F172A',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
   },
-  badge: {
-    color: '#34D399',
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-    marginBottom: 12,
-  },
-  title: {
-    color: '#F8FAFC',
-    fontSize: 28,
-    fontWeight: '800',
-    textAlign: 'center',
-    marginBottom: 12,
-  },
-  subtitle: {
+  loadingText: {
     color: '#94A3B8',
-    fontSize: 16,
-    textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: 24,
-  },
-  metaBox: {
-    backgroundColor: '#1E293B',
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  metaText: {
-    color: '#E2E8F0',
-    fontSize: 14,
-    marginVertical: 2,
+    fontSize: 15,
+    marginTop: 14,
   },
 });
