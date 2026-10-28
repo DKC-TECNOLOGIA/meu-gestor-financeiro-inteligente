@@ -128,6 +128,24 @@ export default function ProfileAndExportScreen() {
             Editar Objetivos e Dados do Onboarding
           </Text>
         </Pressable>
+
+        <Pressable
+          style={styles.secondaryBtn}
+          onPress={() => router.push('/cards')}
+        >
+          <Text style={styles.secondaryBtnText}>
+            Gerenciar Cartões de Crédito e Faturas
+          </Text>
+        </Pressable>
+
+        <Pressable
+          style={styles.secondaryBtn}
+          onPress={() => router.push('/open-finance')}
+        >
+          <Text style={styles.secondaryBtnText}>
+            Integração Bancária (Open Finance Brasil)
+          </Text>
+        </Pressable>
       </View>
 
       {/* Exportação Real para Excel (Seção 10) */}

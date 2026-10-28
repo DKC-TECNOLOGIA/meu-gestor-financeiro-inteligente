@@ -17,6 +17,12 @@ import {
   evaluateMonthlyGamificationEvents,
   resolveGamificationLevel,
 } from '@/domain/gamification/gamification-engine';
+import {
+  assertNoBankPasswordProvided,
+  normalizeAndClassifyBankTransaction,
+  OpenFinanceScope,
+  RawProviderBankTransaction,
+} from '@/domain/open-finance/open-finance-provider';
 import { computeNormalizedBaseUnitPrice } from '@/domain/price-comparison/price-analyzer';
 import {
   normalizeProductName,
@@ -27,6 +33,8 @@ import {
   AccountRow,
   AiRecommendationRow,
   AiRecommendationStatusType,
+  BankConnectionRow,
+  BankTransactionRow,
   CardInvoiceRow,
   CategoryRow,
   CreditCardRow,
@@ -143,6 +151,24 @@ export interface CreateFinancialGoalInput {
   notes?: string | null;
 }
 
+export interface CreateCreditCardInput {
+  name: string;
+  brand?: string;
+  lastFourDigits?: string | null;
+  creditLimit: number;
+  closingDay: number;
+  dueDay: number;
+  defaultPaymentAccountId?: string | null;
+}
+
+export interface AuthorizeBankConsentInput {
+  providerName: 'pluggy' | 'belvo' | 'open_finance_direct';
+  institutionName: string;
+  institutionIspb: string;
+  grantedScopes: OpenFinanceScope[];
+  providerItemId?: string;
+}
+
 export interface FinanceFilterState {
   referenceYearMonth: string; // 'YYYY-MM'
   selectedAccountId: string | null;
@@ -168,6 +194,8 @@ export interface FinanceStoreState {
   gamificationEvents: GamificationEventRow[];
   userLevel: UserLevelRow;
   aiRecommendations: AiRecommendationRow[];
+  bankConnections: BankConnectionRow[];
+  bankTransactions: BankTransactionRow[];
   pendingReceiptDraft: ParsedReceiptDraft | null;
   filters: FinanceFilterState;
 
@@ -196,6 +224,16 @@ export interface FinanceStoreState {
     input: TransactionInput,
   ) => Promise<TransactionRow>;
   deleteTransaction: (transactionId: string) => Promise<void>;
+
+  // Cartões e Faturas (Tela 11 / Seção 5)
+  createCreditCard: (input: CreateCreditCardInput) => Promise<CreditCardRow>;
+  payCreditCardInvoice: (params: {
+    creditCardId: string;
+    referenceYearMonth: string; // 'YYYY-MM'
+    paymentAccountId: string;
+    paymentDate: string; // 'YYYY-MM-DD'
+    amount?: number;
+  }) => Promise<{ invoice: CardInvoiceRow; paymentTransaction: TransactionRow }>;
 
   // Notas Fiscais e Catálogo de Preços (Seção 6 e Seção 7)
   setPendingReceiptDraft: (draft: ParsedReceiptDraft | null) => void;
@@ -238,6 +276,26 @@ export interface FinanceStoreState {
     actualMeasuredImpact?: number | null,
     userFeedbackNotes?: string | null,
   ) => Promise<AiRecommendationRow>;
+
+  // Integração Bancária Open Finance Brasil (Seção 9)
+  authorizeBankConnectionConsent: (
+    input: AuthorizeBankConsentInput & Record<string, unknown>,
+  ) => Promise<BankConnectionRow>;
+  syncBankTransactionsBatch: (
+    bankConnectionId: string,
+    rawItems: readonly RawProviderBankTransaction[],
+  ) => Promise<{
+    stagedCount: number;
+    skippedDuplicatesCount: number;
+    stagedItems: BankTransactionRow[];
+  }>;
+  reconcileAndImportBankTransaction: (
+    bankTransactionId: string,
+    overrideCategoryId?: string | null,
+  ) => Promise<TransactionRow>;
+  revokeBankConnectionConsent: (
+    bankConnectionId: string,
+  ) => Promise<BankConnectionRow>;
 }
 
 function getCurrentYearMonthBahia(): string {
@@ -284,6 +342,8 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
           gamificationEvents: state.gamificationEvents,
           userLevel: state.userLevel,
           aiRecommendations: state.aiRecommendations,
+          bankConnections: state.bankConnections,
+          bankTransactions: state.bankTransactions,
         }),
       );
     } catch {
@@ -352,6 +412,8 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
     gamificationEvents: [],
     userLevel: buildDefaultUserLevel(defaultUserId),
     aiRecommendations: [],
+    bankConnections: [],
+    bankTransactions: [],
     pendingReceiptDraft: null,
     filters: {
       referenceYearMonth: getCurrentYearMonthBahia(),
@@ -410,6 +472,8 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
             gamificationEvents: parsed.gamificationEvents ?? [],
             userLevel: parsed.userLevel ?? buildDefaultUserLevel(defaultUserId),
             aiRecommendations: parsed.aiRecommendations ?? [],
+            bankConnections: parsed.bankConnections ?? [],
+            bankTransactions: parsed.bankTransactions ?? [],
             isHydrated: true,
             isLoading: false,
           });
@@ -777,6 +841,129 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
       }
     },
 
+    createCreditCard: async (input: CreateCreditCardInput) => {
+      if (input.name.trim().length < 2) {
+        throw new Error('Informe um nome válido para o cartão.');
+      }
+      if (input.creditLimit < 0) {
+        throw new Error('O limite do cartão não pode ser negativo.');
+      }
+      if (
+        input.closingDay < 1 ||
+        input.closingDay > 31 ||
+        input.dueDay < 1 ||
+        input.dueDay > 31
+      ) {
+        throw new Error('Os dias de fechamento e vencimento devem estar entre 1 e 31.');
+      }
+
+      const state = get();
+      const now = new Date().toISOString();
+      const newCard: CreditCardRow = {
+        id: `card-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+        user_id: state.currentUserId,
+        default_payment_account_id:
+          input.defaultPaymentAccountId ?? state.accounts[0]?.id ?? null,
+        name: input.name.trim(),
+        brand: input.brand ?? 'Mastercard',
+        last_four_digits: input.lastFourDigits ?? null,
+        credit_limit: fromCents(toCents(input.creditLimit)),
+        closing_day: input.closingDay,
+        due_day: input.dueDay,
+        is_archived: false,
+        created_at: now,
+        updated_at: now,
+      };
+
+      set((curr) => ({
+        creditCards: [...curr.creditCards, newCard],
+      }));
+      await persistLocalSnapshot();
+      return newCard;
+    },
+
+    payCreditCardInvoice: async (params) => {
+      const state = get();
+      const card = state.creditCards.find((c) => c.id === params.creditCardId);
+      if (!card) {
+        throw new Error('Cartão de crédito não encontrado.');
+      }
+
+      const cardPurchasesCents = state.transactions
+        .filter(
+          (tx) =>
+            tx.kind === 'expense' &&
+            tx.payment_method === 'credit_card' &&
+            tx.credit_card_id === params.creditCardId &&
+            tx.status !== 'canceled' &&
+            tx.competence_date.startsWith(params.referenceYearMonth),
+        )
+        .reduce((acc, tx) => acc + toCents(tx.amount), 0);
+
+      const totalInvoiceAmount =
+        params.amount != null
+          ? fromCents(toCents(params.amount))
+          : fromCents(cardPurchasesCents);
+
+      if (totalInvoiceAmount <= 0) {
+        throw new Error('Não há saldo de fatura em aberto para pagamento neste mês.');
+      }
+
+      const now = new Date().toISOString();
+      const refMonthDate = `${params.referenceYearMonth}-01`;
+      const existingInvoice = state.cardInvoices.find(
+        (inv) =>
+          inv.credit_card_id === params.creditCardId &&
+          inv.reference_month === refMonthDate,
+      );
+
+      const invoiceId =
+        existingInvoice?.id ??
+        `inv-${params.creditCardId}-${params.referenceYearMonth}`;
+
+      const paymentTx = await get().createTransaction({
+        kind: 'invoice_payment',
+        description: `Pagamento Fatura ${card.name} (${params.referenceYearMonth})`,
+        amount: totalInvoiceAmount,
+        competenceDate: params.paymentDate,
+        settlementDate: params.paymentDate,
+        accountId: params.paymentAccountId,
+        creditCardId: params.creditCardId,
+        cardInvoiceId: invoiceId,
+        paymentMethod: 'pix',
+        status: 'paid',
+        isFixed: false,
+        isRecurring: false,
+        recurrenceFrequency: 'none',
+        origin: 'manual',
+        externalId: `inv-pay-${invoiceId}`,
+      });
+
+      const invoiceRow: CardInvoiceRow = {
+        id: invoiceId,
+        user_id: state.currentUserId,
+        credit_card_id: params.creditCardId,
+        reference_month: refMonthDate,
+        closing_date: `${params.referenceYearMonth}-${String(card.closing_day).padStart(2, '0')}`,
+        due_date: `${params.referenceYearMonth}-${String(card.due_day).padStart(2, '0')}`,
+        total_amount: totalInvoiceAmount,
+        paid_amount: totalInvoiceAmount,
+        status: 'paid',
+        paid_at: now,
+        created_at: existingInvoice?.created_at ?? now,
+        updated_at: now,
+      };
+
+      set((curr) => ({
+        cardInvoices: existingInvoice
+          ? curr.cardInvoices.map((i) => (i.id === invoiceId ? invoiceRow : i))
+          : [invoiceRow, ...curr.cardInvoices],
+      }));
+      await persistLocalSnapshot();
+
+      return { invoice: invoiceRow, paymentTransaction: paymentTx };
+    },
+
     confirmAndSaveReceipt: async (draft: ParsedReceiptDraft) => {
       set({ isLoading: true, errorMessage: null });
       try {
@@ -1109,7 +1296,6 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
       }
 
       const state = get();
-      // Impedir duplicação pela chave de idempotência (Seção 12)
       const alreadyExists = state.gamificationEvents.some(
         (e) => e.idempotency_key === params.idempotencyKey,
       );
@@ -1288,6 +1474,205 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
       });
       await persistLocalSnapshot();
       return updated;
+    },
+
+    authorizeBankConnectionConsent: async (input) => {
+      assertNoBankPasswordProvided(input);
+
+      if (!input.grantedScopes || input.grantedScopes.length === 0) {
+        throw new Error(
+          'Selecione explicitamente pelo menos um escopo de dados (ex.: contas ou transações) para autorizar o consentimento.',
+        );
+      }
+
+      const state = get();
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000); // 12 meses
+
+      const conn: BankConnectionRow = {
+        id: `bconn-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        user_id: state.currentUserId,
+        provider_name: input.providerName,
+        provider_item_id:
+          input.providerItemId ?? `item-${input.institutionIspb}-${Date.now()}`,
+        institution_name: input.institutionName,
+        institution_ispb: input.institutionIspb,
+        status: 'active',
+        granted_scopes: input.grantedScopes,
+        consent_granted_at: now.toISOString(),
+        consent_expires_at: expiresAt.toISOString(),
+        revoked_at: null,
+        last_synced_at: null,
+        last_sync_error: null,
+        created_at: now.toISOString(),
+        updated_at: now.toISOString(),
+      };
+
+      set((curr) => ({
+        bankConnections: [conn, ...curr.bankConnections],
+      }));
+      await persistLocalSnapshot();
+      return conn;
+    },
+
+    syncBankTransactionsBatch: async (bankConnectionId, rawItems) => {
+      const state = get();
+      const connection = state.bankConnections.find(
+        (c) => c.id === bankConnectionId,
+      );
+      if (!connection) {
+        throw new Error('Conexão bancária não encontrada.');
+      }
+      if (connection.status !== 'active' || connection.revoked_at != null) {
+        throw new Error(
+          'Não é possível sincronizar: o consentimento desta conexão bancária foi revogado ou expirou.',
+        );
+      }
+
+      const now = new Date().toISOString();
+      const stagedItems: BankTransactionRow[] = [];
+      let skippedDuplicatesCount = 0;
+
+      for (const rawTx of rawItems) {
+        const normalized = normalizeAndClassifyBankTransaction(
+          rawTx,
+          state.categories,
+          state.transactions,
+          [...state.bankTransactions, ...stagedItems],
+        );
+
+        if (normalized.isDuplicateOfExisting) {
+          skippedDuplicatesCount += 1;
+          continue;
+        }
+
+        const btx: BankTransactionRow = {
+          id: `btx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          user_id: state.currentUserId,
+          bank_connection_id: bankConnectionId,
+          linked_transaction_id: null,
+          provider_transaction_id: normalized.providerTransactionId,
+          provider_account_id: normalized.providerAccountId,
+          raw_description: normalized.rawDescription,
+          normalized_description: normalized.normalizedDescription,
+          amount: normalized.amount,
+          direction: normalized.direction,
+          occurred_at: normalized.occurredAt,
+          payment_method_hint: normalized.paymentMethodHint,
+          suggested_category_id: normalized.suggestedCategoryId,
+          reconciliation_status:
+            normalized.suggestedKind === 'transfer'
+              ? 'ignored_transfer'
+              : 'pending_review',
+          created_at: now,
+        };
+
+        stagedItems.push(btx);
+      }
+
+      set((curr) => ({
+        bankTransactions: [...stagedItems, ...curr.bankTransactions],
+        bankConnections: curr.bankConnections.map((c) =>
+          c.id === bankConnectionId
+            ? { ...c, last_synced_at: now, updated_at: now }
+            : c,
+        ),
+      }));
+      await persistLocalSnapshot();
+
+      return {
+        stagedCount: stagedItems.length,
+        skippedDuplicatesCount,
+        stagedItems,
+      };
+    },
+
+    reconcileAndImportBankTransaction: async (
+      bankTransactionId: string,
+      overrideCategoryId?: string | null,
+    ) => {
+      const state = get();
+      const btx = state.bankTransactions.find((b) => b.id === bankTransactionId);
+      if (!btx) {
+        throw new Error('Transação bancária sincronizada não encontrada.');
+      }
+      if (btx.reconciliation_status === 'imported') {
+        throw new Error(
+          'Esta transação bancária já foi conciliada e importada anteriormente.',
+        );
+      }
+
+      const txDate = btx.occurred_at.slice(0, 10);
+      const isCredit = btx.direction === 'CREDIT';
+      const isInvoicePayment = /PAGAMENTO\s+FATURA|PAGTO\s+CARTAO/i.test(
+        btx.normalized_description,
+      );
+
+      const importedTx = await get().createTransaction({
+        kind: isCredit
+          ? 'income'
+          : isInvoicePayment
+            ? 'invoice_payment'
+            : 'expense',
+        description: btx.normalized_description,
+        amount: btx.amount,
+        competenceDate: txDate,
+        settlementDate: btx.payment_method_hint === 'credit_card' ? null : txDate,
+        categoryId:
+          overrideCategoryId !== undefined
+            ? overrideCategoryId
+            : btx.suggested_category_id,
+        accountId: state.accounts[0]?.id ?? null,
+        creditCardId:
+          btx.payment_method_hint === 'credit_card' || isInvoicePayment
+            ? (state.creditCards[0]?.id ?? null)
+            : null,
+        paymentMethod: btx.payment_method_hint ?? 'pix',
+        status: isCredit ? 'received' : 'paid',
+        isFixed: false,
+        isRecurring: false,
+        recurrenceFrequency: 'none',
+        origin: 'bank_integration',
+        externalId: btx.provider_transaction_id,
+      });
+
+      set((curr) => ({
+        bankTransactions: curr.bankTransactions.map((item) =>
+          item.id === bankTransactionId
+            ? {
+                ...item,
+                linked_transaction_id: importedTx.id,
+                reconciliation_status: 'imported',
+              }
+            : item,
+        ),
+      }));
+      await persistLocalSnapshot();
+      return importedTx;
+    },
+
+    revokeBankConnectionConsent: async (bankConnectionId: string) => {
+      const state = get();
+      const target = state.bankConnections.find((c) => c.id === bankConnectionId);
+      if (!target) {
+        throw new Error('Conexão bancária não encontrada.');
+      }
+
+      const now = new Date().toISOString();
+      const revoked: BankConnectionRow = {
+        ...target,
+        status: 'revoked',
+        revoked_at: now,
+        updated_at: now,
+      };
+
+      set((curr) => ({
+        bankConnections: curr.bankConnections.map((c) =>
+          c.id === bankConnectionId ? revoked : c,
+        ),
+      }));
+      await persistLocalSnapshot();
+      return revoked;
     },
   };
 });
