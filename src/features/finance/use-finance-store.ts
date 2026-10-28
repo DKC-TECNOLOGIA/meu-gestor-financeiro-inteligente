@@ -2,6 +2,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { APP_CURRENCY, APP_TIMEZONE, INITIAL_SYSTEM_CATEGORIES } from '@/config/constants';
 import {
+  generateDeterministicAdvisorRecommendations,
+  validateAdvisorSafetyConstraints,
+} from '@/domain/advisor/financial-advisor';
+import {
   CategoryInput,
   categoryInputSchema,
   OnboardingInput,
@@ -9,6 +13,10 @@ import {
   TransactionInput,
   transactionInputSchema,
 } from '@/domain/finance/validators';
+import {
+  evaluateMonthlyGamificationEvents,
+  resolveGamificationLevel,
+} from '@/domain/gamification/gamification-engine';
 import { computeNormalizedBaseUnitPrice } from '@/domain/price-comparison/price-analyzer';
 import {
   normalizeProductName,
@@ -17,14 +25,21 @@ import {
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import {
   AccountRow,
+  AiRecommendationRow,
+  AiRecommendationStatusType,
   CardInvoiceRow,
   CategoryRow,
   CreditCardRow,
+  FinancialGoalRow,
+  FinancialObjectiveType,
+  GamificationEventRow,
+  GoalProgressRow,
   ProductCatalogRow,
   ProfileRow,
   ReceiptItemRow,
   ReceiptRow,
   TransactionRow,
+  UserLevelRow,
 } from '@/types/database.types';
 import { fromCents, toCents } from '@/utils/currency';
 
@@ -104,6 +119,30 @@ function buildDefaultCreditCards(userId: string): CreditCardRow[] {
   ];
 }
 
+function buildDefaultUserLevel(userId: string): UserLevelRow {
+  const now = new Date().toISOString();
+  return {
+    user_id: userId,
+    current_level: 'iniciante',
+    total_points: 0,
+    active_streak_weeks: 0,
+    months_within_budget: 0,
+    last_evaluated_at: now,
+    updated_at: now,
+  };
+}
+
+export interface CreateFinancialGoalInput {
+  name: string;
+  objectiveType: FinancialObjectiveType;
+  targetAmount: number;
+  currentAmount?: number;
+  monthlyContributionTarget?: number | null;
+  targetDate?: string | null;
+  priority?: number;
+  notes?: string | null;
+}
+
 export interface FinanceFilterState {
   referenceYearMonth: string; // 'YYYY-MM'
   selectedAccountId: string | null;
@@ -124,6 +163,11 @@ export interface FinanceStoreState {
   receipts: ReceiptRow[];
   receiptItems: ReceiptItemRow[];
   productCatalog: ProductCatalogRow[];
+  financialGoals: FinancialGoalRow[];
+  goalsProgress: GoalProgressRow[];
+  gamificationEvents: GamificationEventRow[];
+  userLevel: UserLevelRow;
+  aiRecommendations: AiRecommendationRow[];
   pendingReceiptDraft: ParsedReceiptDraft | null;
   filters: FinanceFilterState;
 
@@ -164,6 +208,36 @@ export interface FinanceStoreState {
     productIds: readonly string[],
     groupId?: string,
   ) => Promise<string>;
+
+  // Metas Financeiras (Seção 2 e Seção 12)
+  createFinancialGoal: (input: CreateFinancialGoalInput) => Promise<FinancialGoalRow>;
+  recordGoalContribution: (
+    goalId: string,
+    contributionAmount: number,
+    notes?: string,
+  ) => Promise<{ goal: FinancialGoalRow; progress: GoalProgressRow }>;
+
+  // Gamificação Auditável (Seção 12)
+  recordAuditGamificationEvent: (params: {
+    ruleCode: string;
+    reasonDescription: string;
+    pointsDelta: number;
+    idempotencyKey: string;
+    referenceMonth?: string | null;
+    metadata?: Record<string, unknown>;
+  }) => Promise<UserLevelRow>;
+  evaluateCurrentMonthGamification: () => Promise<UserLevelRow>;
+
+  // Orientador Financeiro por IA (Seção 11)
+  generateAdvisorRecommendationsForMonth: (
+    referenceYearMonth?: string,
+  ) => Promise<AiRecommendationRow[]>;
+  updateAdvisorRecommendationStatus: (
+    recommendationId: string,
+    status: AiRecommendationStatusType,
+    actualMeasuredImpact?: number | null,
+    userFeedbackNotes?: string | null,
+  ) => Promise<AiRecommendationRow>;
 }
 
 function getCurrentYearMonthBahia(): string {
@@ -176,6 +250,16 @@ function getCurrentYearMonthBahia(): string {
   const year = parts.find((p) => p.type === 'year')?.value ?? '2026';
   const month = parts.find((p) => p.type === 'month')?.value ?? '10';
   return `${year}-${month}`;
+}
+
+function getPreviousYearMonth(yearMonth: string): string {
+  const parts = yearMonth.split('-');
+  const year = Number(parts[0] ?? 2026);
+  const month = Number(parts[1] ?? 10);
+  if (month === 1) {
+    return `${year - 1}-12`;
+  }
+  return `${year}-${String(month - 1).padStart(2, '0')}`;
 }
 
 export const useFinanceStore = create<FinanceStoreState>((set, get) => {
@@ -195,6 +279,11 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
           receipts: state.receipts,
           receiptItems: state.receiptItems,
           productCatalog: state.productCatalog,
+          financialGoals: state.financialGoals,
+          goalsProgress: state.goalsProgress,
+          gamificationEvents: state.gamificationEvents,
+          userLevel: state.userLevel,
+          aiRecommendations: state.aiRecommendations,
         }),
       );
     } catch {
@@ -258,6 +347,11 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
     receipts: [],
     receiptItems: [],
     productCatalog: [],
+    financialGoals: [],
+    goalsProgress: [],
+    gamificationEvents: [],
+    userLevel: buildDefaultUserLevel(defaultUserId),
+    aiRecommendations: [],
     pendingReceiptDraft: null,
     filters: {
       referenceYearMonth: getCurrentYearMonthBahia(),
@@ -311,6 +405,11 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
             receipts: parsed.receipts ?? [],
             receiptItems: parsed.receiptItems ?? [],
             productCatalog: parsed.productCatalog ?? [],
+            financialGoals: parsed.financialGoals ?? [],
+            goalsProgress: parsed.goalsProgress ?? [],
+            gamificationEvents: parsed.gamificationEvents ?? [],
+            userLevel: parsed.userLevel ?? buildDefaultUserLevel(defaultUserId),
+            aiRecommendations: parsed.aiRecommendations ?? [],
             isHydrated: true,
             isLoading: false,
           });
@@ -683,7 +782,6 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
       try {
         const state = get();
 
-        // 1. Verificar duplicidade por chave de acesso (Seção 6: "detecção de duplicidade por chave de acesso e origem da nota")
         if (draft.accessKey) {
           const duplicateReceipt = state.receipts.find(
             (r) => r.access_key === draft.accessKey,
@@ -716,7 +814,6 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
         const finalPaidAmount =
           draft.totalPaidAmount > 0 ? draft.totalPaidAmount : computedNetTotal;
 
-        // 2. Criar lançamento financeiro vinculado à nota (Seção 6, passo 9 e 10)
         const linkedTransaction = await get().createTransaction({
           kind: 'expense',
           description: `NFC-e: ${draft.merchantTradeName || draft.merchantName}`,
@@ -766,7 +863,6 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
           updated_at: now,
         };
 
-        // 3. Atualizar catálogo normalizado de produtos e histórico de preços
         const updatedCatalog = [...get().productCatalog];
         const createdItems: ReceiptItemRow[] = [];
 
@@ -907,6 +1003,291 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
       }));
       await persistLocalSnapshot();
       return groupId;
+    },
+
+    createFinancialGoal: async (input: CreateFinancialGoalInput) => {
+      if (input.name.trim().length < 2) {
+        throw new Error('O nome da meta deve ter pelo menos 2 caracteres.');
+      }
+      if (input.targetAmount <= 0) {
+        throw new Error('O valor alvo da meta deve ser maior que zero.');
+      }
+
+      const state = get();
+      const now = new Date().toISOString();
+      const initialAmount =
+        input.currentAmount != null && input.currentAmount >= 0
+          ? fromCents(toCents(input.currentAmount))
+          : 0;
+
+      const newGoal: FinancialGoalRow = {
+        id: `goal-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        user_id: state.currentUserId,
+        linked_account_id: state.accounts[1]?.id ?? state.accounts[0]?.id ?? null,
+        name: input.name.trim(),
+        objective_type: input.objectiveType,
+        target_amount: fromCents(toCents(input.targetAmount)),
+        current_amount: initialAmount,
+        monthly_contribution_target:
+          input.monthlyContributionTarget != null
+            ? fromCents(toCents(input.monthlyContributionTarget))
+            : null,
+        start_date: now.slice(0, 10),
+        target_date: input.targetDate ?? null,
+        priority: input.priority ?? 1,
+        status:
+          initialAmount >= input.targetAmount ? 'completed' : 'active',
+        notes: input.notes ?? null,
+        created_at: now,
+        updated_at: now,
+      };
+
+      set((curr) => ({
+        financialGoals: [newGoal, ...curr.financialGoals],
+      }));
+      await persistLocalSnapshot();
+      return newGoal;
+    },
+
+    recordGoalContribution: async (
+      goalId: string,
+      contributionAmount: number,
+      notes?: string,
+    ) => {
+      if (contributionAmount === 0 || !Number.isFinite(contributionAmount)) {
+        throw new Error('Informe um valor de aporte válido diferente de zero.');
+      }
+
+      const state = get();
+      const targetGoal = state.financialGoals.find((g) => g.id === goalId);
+      if (!targetGoal) {
+        throw new Error('Meta financeira não encontrada.');
+      }
+
+      const newBalanceCents = Math.max(
+        0,
+        toCents(targetGoal.current_amount) + toCents(contributionAmount),
+      );
+      const newBalance = fromCents(newBalanceCents);
+      const now = new Date().toISOString();
+
+      const updatedGoal: FinancialGoalRow = {
+        ...targetGoal,
+        current_amount: newBalance,
+        status: newBalance >= targetGoal.target_amount ? 'completed' : 'active',
+        updated_at: now,
+      };
+
+      const progressEntry: GoalProgressRow = {
+        id: `gprog-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        user_id: state.currentUserId,
+        goal_id: goalId,
+        transaction_id: null,
+        contribution_amount: fromCents(toCents(contributionAmount)),
+        balance_after: newBalance,
+        recorded_at: now.slice(0, 10),
+        notes: notes ?? null,
+        created_at: now,
+      };
+
+      set((curr) => ({
+        financialGoals: curr.financialGoals.map((g) =>
+          g.id === goalId ? updatedGoal : g,
+        ),
+        goalsProgress: [progressEntry, ...curr.goalsProgress],
+      }));
+      await persistLocalSnapshot();
+      return { goal: updatedGoal, progress: progressEntry };
+    },
+
+    recordAuditGamificationEvent: async (params) => {
+      if (params.pointsDelta === 0) {
+        throw new Error('A variação de pontos não pode ser zero.');
+      }
+      if (!params.idempotencyKey || params.idempotencyKey.trim().length < 4) {
+        throw new Error('Chave de idempotência obrigatória para auditoria de pontos.');
+      }
+
+      const state = get();
+      // Impedir duplicação pela chave de idempotência (Seção 12)
+      const alreadyExists = state.gamificationEvents.some(
+        (e) => e.idempotency_key === params.idempotencyKey,
+      );
+      if (alreadyExists) {
+        return state.userLevel;
+      }
+
+      const now = new Date().toISOString();
+      const newEvent: GamificationEventRow = {
+        id: `gamevt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        user_id: state.currentUserId,
+        rule_code: params.ruleCode,
+        reason_description: params.reasonDescription,
+        points_delta: params.pointsDelta,
+        reference_month: params.referenceMonth ?? null,
+        idempotency_key: params.idempotencyKey,
+        metadata: params.metadata ?? {},
+        occurred_at: now,
+      };
+
+      const nextEvents = [newEvent, ...state.gamificationEvents];
+      const totalPoints = Math.max(
+        0,
+        nextEvents.reduce((acc, ev) => acc + ev.points_delta, 0),
+      );
+      const levelDesc = resolveGamificationLevel(totalPoints);
+
+      const updatedLevel: UserLevelRow = {
+        ...state.userLevel,
+        current_level: levelDesc.level,
+        total_points: totalPoints,
+        last_evaluated_at: now,
+        updated_at: now,
+      };
+
+      set({
+        gamificationEvents: nextEvents,
+        userLevel: updatedLevel,
+      });
+      await persistLocalSnapshot();
+      return updatedLevel;
+    },
+
+    evaluateCurrentMonthGamification: async () => {
+      const state = get();
+      const refMonth = state.filters.referenceYearMonth;
+      const monthReceiptsCount = state.receipts.filter((r) =>
+        r.issued_at.startsWith(refMonth),
+      ).length;
+
+      const candidateEvents = evaluateMonthlyGamificationEvents({
+        userId: state.currentUserId,
+        referenceYearMonth: refMonth,
+        categories: state.categories,
+        transactions: state.transactions,
+        goals: state.financialGoals,
+        existingEvents: state.gamificationEvents,
+        receiptsCountInMonth: monthReceiptsCount,
+      });
+
+      let latestLevel = state.userLevel;
+      for (const candidate of candidateEvents) {
+        latestLevel = await get().recordAuditGamificationEvent({
+          ruleCode: candidate.ruleCode,
+          reasonDescription: candidate.reasonDescription,
+          pointsDelta: candidate.pointsDelta,
+          idempotencyKey: candidate.idempotencyKey,
+          referenceMonth: candidate.referenceMonth,
+          metadata: candidate.metadata,
+        });
+      }
+
+      return latestLevel;
+    },
+
+    generateAdvisorRecommendationsForMonth: async (customYearMonth?: string) => {
+      const state = get();
+      const refYm = customYearMonth ?? state.filters.referenceYearMonth;
+      const prevYm = getPreviousYearMonth(refYm);
+
+      const drafts = generateDeterministicAdvisorRecommendations({
+        referenceYearMonth: refYm,
+        previousYearMonth: prevYm,
+        profile: state.profile,
+        categories: state.categories,
+        transactions: state.transactions,
+        goals: state.financialGoals,
+        receiptItems: state.receiptItems,
+        productCatalog: state.productCatalog,
+      });
+
+      const now = new Date().toISOString();
+      const createdRows: AiRecommendationRow[] = [];
+
+      for (const d of drafts) {
+        validateAdvisorSafetyConstraints(d);
+        const alreadyGenerated = state.aiRecommendations.find(
+          (r) => r.reference_month === `${refYm}-01` && r.title === d.title,
+        );
+        if (alreadyGenerated) {
+          createdRows.push(alreadyGenerated);
+          continue;
+        }
+
+        const row: AiRecommendationRow = {
+          id: `airec-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          user_id: state.currentUserId,
+          reference_month: `${refYm}-01`,
+          title: d.title,
+          identified_situation: d.identifiedSituation,
+          supporting_data: d.supportingData,
+          estimated_financial_impact: d.estimatedFinancialImpact,
+          is_impact_estimate: d.isImpactEstimate,
+          suggested_action: d.suggestedAction,
+          timeframe_or_frequency: d.timeframeOrFrequency,
+          confidence_level: d.confidenceLevel,
+          risks_and_limitations: d.risksAndLimitations,
+          evaluation_method: d.evaluationMethod,
+          requires_professional_review: d.requiresProfessionalReview,
+          status: 'pending',
+          user_feedback_notes: null,
+          actual_measured_impact: null,
+          responded_at: null,
+          completed_at: null,
+          created_at: now,
+          updated_at: now,
+        };
+        createdRows.push(row);
+      }
+
+      const merged = [
+        ...createdRows.filter(
+          (cr) => !state.aiRecommendations.some((existing) => existing.id === cr.id),
+        ),
+        ...state.aiRecommendations,
+      ];
+
+      set({ aiRecommendations: merged });
+      await persistLocalSnapshot();
+      return merged;
+    },
+
+    updateAdvisorRecommendationStatus: async (
+      recommendationId: string,
+      status: AiRecommendationStatusType,
+      actualMeasuredImpact = null,
+      userFeedbackNotes = null,
+    ) => {
+      const state = get();
+      const existing = state.aiRecommendations.find((r) => r.id === recommendationId);
+      if (!existing) {
+        throw new Error('Recomendação não encontrada.');
+      }
+
+      const now = new Date().toISOString();
+      const updated: AiRecommendationRow = {
+        ...existing,
+        status,
+        actual_measured_impact:
+          actualMeasuredImpact !== undefined
+            ? actualMeasuredImpact
+            : existing.actual_measured_impact,
+        user_feedback_notes:
+          userFeedbackNotes !== undefined
+            ? userFeedbackNotes
+            : existing.user_feedback_notes,
+        responded_at: existing.responded_at ?? now,
+        completed_at: status === 'completed' ? now : existing.completed_at,
+        updated_at: now,
+      };
+
+      set({
+        aiRecommendations: state.aiRecommendations.map((r) =>
+          r.id === recommendationId ? updated : r,
+        ),
+      });
+      await persistLocalSnapshot();
+      return updated;
     },
   };
 });

@@ -4,6 +4,7 @@ import {
   FolderKanban,
   ListOrdered,
   QrCode,
+  Sparkles,
   UserCheck,
 } from 'lucide-react-native';
 
@@ -49,6 +50,13 @@ export default function TabsLayout() {
         options={{
           title: 'Orçamentos',
           tabBarIcon: ({ color, size }) => <FolderKanban color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="advisor"
+        options={{
+          title: 'Orientador IA',
+          tabBarIcon: ({ color, size }) => <Sparkles color={color} size={size} />,
         }}
       />
       <Tabs.Screen
