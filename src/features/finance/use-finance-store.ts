@@ -9,13 +9,21 @@ import {
   TransactionInput,
   transactionInputSchema,
 } from '@/domain/finance/validators';
+import { computeNormalizedBaseUnitPrice } from '@/domain/price-comparison/price-analyzer';
+import {
+  normalizeProductName,
+  ParsedReceiptDraft,
+} from '@/domain/receipts/nfce-parser';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import {
   AccountRow,
   CardInvoiceRow,
   CategoryRow,
   CreditCardRow,
+  ProductCatalogRow,
   ProfileRow,
+  ReceiptItemRow,
+  ReceiptRow,
   TransactionRow,
 } from '@/types/database.types';
 import { fromCents, toCents } from '@/utils/currency';
@@ -113,6 +121,10 @@ export interface FinanceStoreState {
   creditCards: CreditCardRow[];
   cardInvoices: CardInvoiceRow[];
   transactions: TransactionRow[];
+  receipts: ReceiptRow[];
+  receiptItems: ReceiptItemRow[];
+  productCatalog: ProductCatalogRow[];
+  pendingReceiptDraft: ParsedReceiptDraft | null;
   filters: FinanceFilterState;
 
   // Actions
@@ -140,6 +152,18 @@ export interface FinanceStoreState {
     input: TransactionInput,
   ) => Promise<TransactionRow>;
   deleteTransaction: (transactionId: string) => Promise<void>;
+
+  // Notas Fiscais e Catálogo de Preços (Seção 6 e Seção 7)
+  setPendingReceiptDraft: (draft: ParsedReceiptDraft | null) => void;
+  confirmAndSaveReceipt: (draft: ParsedReceiptDraft) => Promise<{
+    receipt: ReceiptRow;
+    items: ReceiptItemRow[];
+    transaction: TransactionRow;
+  }>;
+  linkEquivalentProducts: (
+    productIds: readonly string[],
+    groupId?: string,
+  ) => Promise<string>;
 }
 
 function getCurrentYearMonthBahia(): string {
@@ -168,6 +192,9 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
           creditCards: state.creditCards,
           cardInvoices: state.cardInvoices,
           transactions: state.transactions,
+          receipts: state.receipts,
+          receiptItems: state.receiptItems,
+          productCatalog: state.productCatalog,
         }),
       );
     } catch {
@@ -228,6 +255,10 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
     creditCards: buildDefaultCreditCards(defaultUserId),
     cardInvoices: [],
     transactions: [],
+    receipts: [],
+    receiptItems: [],
+    productCatalog: [],
+    pendingReceiptDraft: null,
     filters: {
       referenceYearMonth: getCurrentYearMonthBahia(),
       selectedAccountId: null,
@@ -250,6 +281,9 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
       set((s) => ({
         filters: { ...s.filters, selectedCategoryId: categoryId },
       })),
+
+    setPendingReceiptDraft: (draft: ParsedReceiptDraft | null) =>
+      set({ pendingReceiptDraft: draft }),
 
     hydrate: async () => {
       set({ isLoading: true, errorMessage: null });
@@ -274,6 +308,9 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
                 : buildDefaultCreditCards(defaultUserId),
             cardInvoices: parsed.cardInvoices ?? [],
             transactions: parsed.transactions ?? [],
+            receipts: parsed.receipts ?? [],
+            receiptItems: parsed.receiptItems ?? [],
+            productCatalog: parsed.productCatalog ?? [],
             isHydrated: true,
             isLoading: false,
           });
@@ -349,7 +386,6 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
           updated_at: now,
         };
 
-        // Se o usuário informou reserva financeira atual no onboarding, ajustar saldo inicial da conta reserva
         const updatedAccounts = get().accounts.map((acc) => {
           if (acc.kind === 'savings' && validated.currentEmergencyFund != null) {
             return {
@@ -485,7 +521,6 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
         const validated = transactionInputSchema.parse(rawInput);
         const state = get();
 
-        // Prevenção de duplicidade por externalId e origem (Seção 5 e Seção 14)
         if (validated.externalId) {
           const duplicate = state.transactions.find(
             (tx) =>
@@ -641,6 +676,237 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
         set({ errorMessage: message, isLoading: false });
         throw err;
       }
+    },
+
+    confirmAndSaveReceipt: async (draft: ParsedReceiptDraft) => {
+      set({ isLoading: true, errorMessage: null });
+      try {
+        const state = get();
+
+        // 1. Verificar duplicidade por chave de acesso (Seção 6: "detecção de duplicidade por chave de acesso e origem da nota")
+        if (draft.accessKey) {
+          const duplicateReceipt = state.receipts.find(
+            (r) => r.access_key === draft.accessKey,
+          );
+          if (duplicateReceipt) {
+            throw new Error(
+              `Nota fiscal já importada anteriormente (Chave de acesso ${draft.accessKey} duplicada).`,
+            );
+          }
+        }
+
+        if (draft.items.length === 0) {
+          throw new Error(
+            'Adicione pelo menos 1 item na nota fiscal antes de confirmar a importação.',
+          );
+        }
+
+        const now = new Date().toISOString();
+        const purchaseDate = draft.issuedAt.slice(0, 10);
+        const supermercadoCategory =
+          state.categories.find((c) => c.slug === 'supermercado') ??
+          state.categories.find((c) => c.kind === 'expense') ??
+          null;
+
+        const computedNetTotal = fromCents(
+          draft.items
+            .filter((it) => !it.isReturned)
+            .reduce((acc, it) => acc + toCents(it.totalNetPaid), 0),
+        );
+        const finalPaidAmount =
+          draft.totalPaidAmount > 0 ? draft.totalPaidAmount : computedNetTotal;
+
+        // 2. Criar lançamento financeiro vinculado à nota (Seção 6, passo 9 e 10)
+        const linkedTransaction = await get().createTransaction({
+          kind: 'expense',
+          description: `NFC-e: ${draft.merchantTradeName || draft.merchantName}`,
+          amount: finalPaidAmount,
+          competenceDate: purchaseDate,
+          settlementDate: purchaseDate,
+          categoryId: supermercadoCategory?.id ?? null,
+          subcategoryId: null,
+          accountId: state.accounts[0]?.id ?? null,
+          destinationAccountId: null,
+          creditCardId: null,
+          cardInvoiceId: null,
+          paymentMethod: 'pix',
+          status: 'paid',
+          isFixed: false,
+          isRecurring: false,
+          recurrenceFrequency: 'none',
+          installmentNumber: null,
+          totalInstallments: null,
+          notes: draft.accessKey ? `Chave NFC-e: ${draft.accessKey}` : null,
+          origin: 'receipt',
+          externalId: draft.accessKey ?? `receipt-${Date.now()}`,
+        });
+
+        const receiptId = `rcpt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        const newReceipt: ReceiptRow = {
+          id: receiptId,
+          user_id: state.currentUserId,
+          transaction_id: linkedTransaction.id,
+          access_key: draft.accessKey,
+          receipt_number: draft.receiptNumber,
+          series: draft.series,
+          issuer_uf: draft.issuerUf,
+          merchant_name: draft.merchantName,
+          merchant_trade_name: draft.merchantTradeName,
+          merchant_cnpj: draft.merchantCnpj,
+          issued_at: draft.issuedAt,
+          total_gross_amount:
+            draft.totalGrossAmount > 0 ? draft.totalGrossAmount : finalPaidAmount,
+          total_discount_amount: draft.totalDiscountAmount,
+          total_paid_amount: finalPaidAmount,
+          source_type: draft.sourceType,
+          qr_code_raw_url: draft.qrCodeRawUrl,
+          status: 'confirmed',
+          notes: null,
+          created_at: now,
+          updated_at: now,
+        };
+
+        // 3. Atualizar catálogo normalizado de produtos e histórico de preços
+        const updatedCatalog = [...get().productCatalog];
+        const createdItems: ReceiptItemRow[] = [];
+
+        for (const itemDraft of draft.items) {
+          const normName = normalizeProductName(
+            itemDraft.normalizedProductName || itemDraft.originalProductName,
+          );
+          const normUnitInfo = computeNormalizedBaseUnitPrice(
+            itemDraft.unitNetPricePaid,
+            itemDraft.measurementUnit,
+            1,
+          );
+
+          let catalogProduct = updatedCatalog.find(
+            (p) =>
+              (itemDraft.eanBarcode &&
+                p.ean_barcode === itemDraft.eanBarcode &&
+                p.measurement_unit === itemDraft.measurementUnit) ||
+              (p.normalized_name === normName &&
+                p.measurement_unit === itemDraft.measurementUnit),
+          );
+
+          if (!catalogProduct) {
+            catalogProduct = {
+              id: `prod-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+              user_id: state.currentUserId,
+              category_id: supermercadoCategory?.id ?? null,
+              equivalent_group_id: null,
+              original_name: itemDraft.originalProductName,
+              normalized_name: normName,
+              brand: itemDraft.brand,
+              ean_barcode: itemDraft.eanBarcode,
+              measurement_unit: itemDraft.measurementUnit,
+              package_quantity: 1,
+              last_observed_price: normUnitInfo.pricePerBaseUnit,
+              min_observed_price: normUnitInfo.pricePerBaseUnit,
+              max_observed_price: normUnitInfo.pricePerBaseUnit,
+              created_at: now,
+              updated_at: now,
+            };
+            updatedCatalog.push(catalogProduct);
+          } else {
+            const minPrice =
+              catalogProduct.min_observed_price != null
+                ? Math.min(
+                    catalogProduct.min_observed_price,
+                    normUnitInfo.pricePerBaseUnit,
+                  )
+                : normUnitInfo.pricePerBaseUnit;
+            const maxPrice =
+              catalogProduct.max_observed_price != null
+                ? Math.max(
+                    catalogProduct.max_observed_price,
+                    normUnitInfo.pricePerBaseUnit,
+                  )
+                : normUnitInfo.pricePerBaseUnit;
+
+            catalogProduct = {
+              ...catalogProduct,
+              last_observed_price: normUnitInfo.pricePerBaseUnit,
+              min_observed_price: minPrice,
+              max_observed_price: maxPrice,
+              updated_at: now,
+            };
+            const idx = updatedCatalog.findIndex((p) => p.id === catalogProduct!.id);
+            if (idx >= 0) {
+              updatedCatalog[idx] = catalogProduct;
+            }
+          }
+
+          const receiptItem: ReceiptItemRow = {
+            id: `ritem-${Date.now()}-${itemDraft.itemSequence}-${Math.random().toString(36).slice(2, 5)}`,
+            user_id: state.currentUserId,
+            receipt_id: receiptId,
+            product_id: catalogProduct.id,
+            item_sequence: itemDraft.itemSequence,
+            original_product_name: itemDraft.originalProductName,
+            normalized_product_name: normName,
+            brand: itemDraft.brand,
+            ean_barcode: itemDraft.eanBarcode,
+            quantity: itemDraft.quantity,
+            measurement_unit: itemDraft.measurementUnit,
+            unit_gross_price: itemDraft.unitGrossPrice,
+            unit_discount_amount: itemDraft.unitDiscountAmount,
+            unit_net_price_paid: itemDraft.unitNetPricePaid,
+            total_net_paid: itemDraft.totalNetPaid,
+            normalized_price_per_base_unit: normUnitInfo.pricePerBaseUnit,
+            normalized_base_unit: normUnitInfo.baseUnit,
+            is_returned: itemDraft.isReturned,
+            purchase_date: purchaseDate,
+            merchant_name: draft.merchantTradeName || draft.merchantName,
+            created_at: now,
+          };
+
+          createdItems.push(receiptItem);
+        }
+
+        set((curr) => ({
+          receipts: [newReceipt, ...curr.receipts],
+          receiptItems: [...createdItems, ...curr.receiptItems],
+          productCatalog: updatedCatalog,
+          pendingReceiptDraft: null,
+          isLoading: false,
+        }));
+        await persistLocalSnapshot();
+
+        return {
+          receipt: newReceipt,
+          items: createdItems,
+          transaction: linkedTransaction,
+        };
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : 'Erro ao confirmar e salvar nota fiscal.';
+        set({ errorMessage: message, isLoading: false });
+        throw err;
+      }
+    },
+
+    linkEquivalentProducts: async (
+      productIds: readonly string[],
+      customGroupId?: string,
+    ) => {
+      if (productIds.length < 2) {
+        throw new Error(
+          'Selecione pelo menos 2 produtos para associar como equivalentes.',
+        );
+      }
+      const groupId = customGroupId ?? `equiv-grp-${Date.now()}`;
+      const now = new Date().toISOString();
+
+      set((curr) => ({
+        productCatalog: curr.productCatalog.map((prod) =>
+          productIds.includes(prod.id)
+            ? { ...prod, equivalent_group_id: groupId, updated_at: now }
+            : prod,
+        ),
+      }));
+      await persistLocalSnapshot();
+      return groupId;
     },
   };
 });

@@ -23,6 +23,8 @@ export default function ProfileAndExportScreen() {
   const transactions = useFinanceStore((s) => s.transactions);
   const creditCards = useFinanceStore((s) => s.creditCards);
   const cardInvoices = useFinanceStore((s) => s.cardInvoices);
+  const receipts = useFinanceStore((s) => s.receipts);
+  const receiptItems = useFinanceStore((s) => s.receiptItems);
   const filters = useFinanceStore((s) => s.filters);
 
   const [periodStart, setPeriodStart] = useState(`${filters.referenceYearMonth}-01`);
@@ -43,6 +45,8 @@ export default function ProfileAndExportScreen() {
         transactions,
         creditCards,
         cardInvoices,
+        receipts,
+        receiptItems,
       });
 
       if (Platform.OS !== 'web' && FileSystem.documentDirectory) {
