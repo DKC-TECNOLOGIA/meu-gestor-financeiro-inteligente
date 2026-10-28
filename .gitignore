@@ -1,0 +1,43 @@
+# Dependências
+node_modules/
+.pnp/
+.pnp.js
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Builds nativos Android / iOS
+android/
+ios/
+*.apk
+*.aab
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Variáveis de ambiente e segredos (NUNCA versionar)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+supabase/.temp/
+supabase/.branches/
+
+# Testes e cobertura
+coverage/
+
+# Sistema Operacional / IDEs
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.vscode/
+.idea/

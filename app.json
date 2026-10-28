@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "Financeiro Inteligente",
+    "slug": "financeiro-inteligente",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "financeirointeligente",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "android": {
+      "package": "br.com.dkctech.financeirointeligente",
+      "adaptiveIcon": {
+        "backgroundColor": "#0F172A"
+      },
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Permita o acesso à câmera para ler o QR Code de notas fiscais (NFC-e)."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
