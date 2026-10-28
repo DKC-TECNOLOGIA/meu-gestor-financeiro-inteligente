@@ -296,6 +296,10 @@ export interface FinanceStoreState {
   revokeBankConnectionConsent: (
     bankConnectionId: string,
   ) => Promise<BankConnectionRow>;
+
+  // Segurança, Isolamento e Direitos do Titular LGPD (Seção 14)
+  switchAuthenticatedUserContext: (userId: string) => void;
+  deleteAllUserDataAndAccount: () => Promise<void>;
 }
 
 function getCurrentYearMonthBahia(): string {
@@ -1673,6 +1677,37 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
       }));
       await persistLocalSnapshot();
       return revoked;
+    },
+
+    switchAuthenticatedUserContext: (userId: string) => {
+      if (!userId.trim()) {
+        throw new Error('Identificador de usuário inválido.');
+      }
+      set({ currentUserId: userId.trim() });
+    },
+
+    deleteAllUserDataAndAccount: async () => {
+      const uid = get().currentUserId;
+      await AsyncStorage.removeItem(LOCAL_STORAGE_KEY);
+      set({
+        profile: null,
+        categories: buildDefaultSystemCategories(),
+        accounts: buildDefaultAccounts(uid),
+        creditCards: buildDefaultCreditCards(uid),
+        cardInvoices: [],
+        transactions: [],
+        receipts: [],
+        receiptItems: [],
+        productCatalog: [],
+        financialGoals: [],
+        goalsProgress: [],
+        gamificationEvents: [],
+        userLevel: buildDefaultUserLevel(uid),
+        aiRecommendations: [],
+        bankConnections: [],
+        bankTransactions: [],
+        pendingReceiptDraft: null,
+      });
     },
   };
 });

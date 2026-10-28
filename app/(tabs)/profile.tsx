@@ -146,6 +146,15 @@ export default function ProfileAndExportScreen() {
             Integração Bancária (Open Finance Brasil)
           </Text>
         </Pressable>
+
+        <Pressable
+          style={styles.secondaryBtn}
+          onPress={() => router.push('/export')}
+        >
+          <Text style={styles.secondaryBtnText}>
+            Abrir Tela Dedicada de Exportação (.XLSX)
+          </Text>
+        </Pressable>
       </View>
 
       {/* Exportação Real para Excel (Seção 10) */}
