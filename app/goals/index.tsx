@@ -1,18 +1,24 @@
 import { useState } from 'react';
-import { useRouter } from 'expo-router';
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { View } from 'react-native';
+import { Plus, Target } from 'lucide-react-native';
 import { useFinanceStore } from '@/features/finance/use-finance-store';
 import { formatCurrencyBRL } from '@/utils/currency';
+import {
+  AppText,
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  InlineMessage,
+  ProgressBar,
+  Screen,
+  Section,
+  SectionHeader,
+  spacing,
+  TextField,
+} from '@/ui';
 
 export default function GoalsScreen() {
-  const router = useRouter();
   const financialGoals = useFinanceStore((s) => s.financialGoals);
   const createFinancialGoal = useFinanceStore((s) => s.createFinancialGoal);
   const recordGoalContribution = useFinanceStore((s) => s.recordGoalContribution);
@@ -23,9 +29,11 @@ export default function GoalsScreen() {
   const [targetDate, setTargetDate] = useState('2027-06-30');
   const [contributionMap, setContributionMap] = useState<Record<string, string>>({});
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [isError, setIsError] = useState(false);
 
   const handleCreateGoal = async () => {
     setStatusMessage(null);
+    setIsError(false);
     const targetVal = Number(targetAmountText.replace(',', '.'));
     const monthlyVal = monthlyTargetText.trim()
       ? Number(monthlyTargetText.replace(',', '.'))
@@ -43,8 +51,9 @@ export default function GoalsScreen() {
       setGoalName('');
       setTargetAmountText('');
       setMonthlyTargetText('');
-      setStatusMessage('Meta financeira criada com sucesso!');
+      setStatusMessage('Meta financeira criada com sucesso.');
     } catch (err) {
+      setIsError(true);
       setStatusMessage(
         err instanceof Error ? err.message : 'Erro ao criar meta financeira.',
       );
@@ -53,13 +62,15 @@ export default function GoalsScreen() {
 
   const handleAddContribution = async (goalId: string) => {
     setStatusMessage(null);
+    setIsError(false);
     const raw = contributionMap[goalId] ?? '';
     const val = Number(raw.replace(',', '.'));
     try {
       await recordGoalContribution(goalId, val, 'Aporte manual');
       setContributionMap((prev) => ({ ...prev, [goalId]: '' }));
-      setStatusMessage('Aporte registrado e evolução atualizada!');
+      setStatusMessage('Aporte registrado e evolução atualizada.');
     } catch (err) {
+      setIsError(true);
       setStatusMessage(
         err instanceof Error ? err.message : 'Erro ao registrar aporte.',
       );
@@ -67,278 +78,154 @@ export default function GoalsScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.badge}>TELA 12 • PLANEJAMENTO DE METAS</Text>
-      <Text style={styles.title}>Metas Financeiras e Evolução</Text>
-      <Text style={styles.subtitle}>
-        Defina objetivos claros, acompanhe seus aportes mensais e evolua nos níveis de
-        responsabilidade financeira.
-      </Text>
-
+    <Screen
+      header={{
+        title: 'Metas Financeiras',
+        subtitle: 'Acompanhe o valor desejado, acumulado e restante de cada objetivo.',
+        showBack: true,
+      }}
+    >
       {statusMessage ? (
-        <View style={styles.statusBox}>
-          <Text style={styles.statusText}>{statusMessage}</Text>
-        </View>
+        <InlineMessage
+          tone={isError ? 'danger' : 'success'}
+          message={statusMessage}
+          style={{ marginBottom: spacing.lg }}
+        />
       ) : null}
 
       {/* Nova Meta */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Criar Nova Meta</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Nome da meta (ex.: Reserva de Emergência 6 meses)"
-          placeholderTextColor="#64748B"
+      <Card style={{ gap: spacing.md }}>
+        <AppText variant="heading">Nova meta</AppText>
+        <TextField
+          label="Nome da meta"
+          placeholder="Ex.: Reserva de Emergência (6 meses)"
           value={goalName}
           onChangeText={setGoalName}
         />
-        <TextInput
-          style={styles.input}
-          placeholder="Valor alvo em R$ (ex.: 12000)"
-          placeholderTextColor="#64748B"
-          keyboardType="numeric"
-          value={targetAmountText}
-          onChangeText={setTargetAmountText}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Aporte mensal planejado opcional (R$)"
-          placeholderTextColor="#64748B"
-          keyboardType="numeric"
-          value={monthlyTargetText}
-          onChangeText={setMonthlyTargetText}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Data alvo (AAAA-MM-DD)"
-          placeholderTextColor="#64748B"
+        <View style={{ flexDirection: 'row', gap: spacing.md }}>
+          <View style={{ flex: 1 }}>
+            <TextField
+              label="Valor desejado"
+              prefix="R$"
+              placeholder="12000"
+              keyboardType="numeric"
+              value={targetAmountText}
+              onChangeText={setTargetAmountText}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <TextField
+              label="Aporte mensal"
+              prefix="R$"
+              placeholder="500"
+              keyboardType="numeric"
+              value={monthlyTargetText}
+              onChangeText={setMonthlyTargetText}
+            />
+          </View>
+        </View>
+        <TextField
+          label="Data alvo (AAAA-MM-DD)"
+          placeholder="2027-06-30"
           value={targetDate}
           onChangeText={setTargetDate}
         />
-
-        <Pressable
-          style={styles.primaryBtn}
+        <Button
+          label="Criar meta"
+          icon={Plus}
           onPress={() => void handleCreateGoal()}
-        >
-          <Text style={styles.primaryBtnText}>Adicionar Meta</Text>
-        </Pressable>
-      </View>
+        />
+      </Card>
 
       {/* Lista de Metas */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>
-          Suas Metas ({financialGoals.length})
-        </Text>
+      <Section>
+        <SectionHeader title={`Suas metas (${financialGoals.length})`} />
         {financialGoals.length === 0 ? (
-          <Text style={styles.emptyText}>
-            Nenhuma meta criada ainda. Comece definindo sua Reserva de Emergência!
-          </Text>
+          <Card>
+            <EmptyState
+              icon={Target}
+              title="Nenhuma meta criada ainda"
+              description="Comece definindo sua reserva de emergência ou próximo objetivo."
+            />
+          </Card>
         ) : (
-          financialGoals.map((goal) => {
-            const pct =
-              goal.target_amount > 0
-                ? Math.min(
-                    100,
-                    Math.round((goal.current_amount / goal.target_amount) * 100),
-                  )
-                : 0;
+          <View style={{ gap: spacing.md }}>
+            {financialGoals.map((goal) => {
+              const ratio =
+                goal.target_amount > 0
+                  ? Math.min(1, goal.current_amount / goal.target_amount)
+                  : 0;
+              const pct = Math.round(ratio * 100);
+              const remaining = Math.max(0, goal.target_amount - goal.current_amount);
 
-            return (
-              <View key={goal.id} style={styles.goalItem}>
-                <View style={styles.goalHeader}>
-                  <Text style={styles.goalName}>{goal.name}</Text>
-                  <Text style={styles.goalPct}>{pct}%</Text>
-                </View>
+              return (
+                <Card key={goal.id} style={{ gap: spacing.md }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <AppText variant="heading" style={{ flex: 1 }}>
+                      {goal.name}
+                    </AppText>
+                    <Badge
+                      tone={goal.status === 'completed' ? 'positive' : 'brand'}
+                      label={`${pct}%`}
+                    />
+                  </View>
 
-                <Text style={styles.goalMeta}>
-                  Acumulado: {formatCurrencyBRL(goal.current_amount)} de{' '}
-                  {formatCurrencyBRL(goal.target_amount)} ({goal.status})
-                </Text>
+                  <ProgressBar value={ratio} tone="accent" height={8} />
 
-                <View style={styles.barTrack}>
-                  <View style={[styles.barFill, { width: `${pct}%` }]} />
-                </View>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <View>
+                      <AppText variant="caption" tone="secondary">
+                        Acumulado
+                      </AppText>
+                      <AppText variant="bodyStrong" tone="positive" style={{ fontVariant: ['tabular-nums'] }}>
+                        {formatCurrencyBRL(goal.current_amount)}
+                      </AppText>
+                    </View>
+                    <View style={{ alignItems: 'center' }}>
+                      <AppText variant="caption" tone="secondary">
+                        Restante
+                      </AppText>
+                      <AppText variant="bodyStrong" style={{ fontVariant: ['tabular-nums'] }}>
+                        {formatCurrencyBRL(remaining)}
+                      </AppText>
+                    </View>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <AppText variant="caption" tone="secondary">
+                        Meta total
+                      </AppText>
+                      <AppText variant="bodyStrong" style={{ fontVariant: ['tabular-nums'] }}>
+                        {formatCurrencyBRL(goal.target_amount)}
+                      </AppText>
+                    </View>
+                  </View>
 
-                <View style={styles.contribRow}>
-                  <TextInput
-                    style={styles.contribInput}
-                    placeholder="Novo aporte R$"
-                    placeholderTextColor="#64748B"
-                    keyboardType="numeric"
-                    value={contributionMap[goal.id] ?? ''}
-                    onChangeText={(txt) =>
-                      setContributionMap((prev) => ({ ...prev, [goal.id]: txt }))
-                    }
-                  />
-                  <Pressable
-                    style={styles.contribBtn}
-                    onPress={() => void handleAddContribution(goal.id)}
-                  >
-                    <Text style={styles.contribBtnText}>+ Aportar</Text>
-                  </Pressable>
-                </View>
-              </View>
-            );
-          })
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm }}>
+                    <View style={{ flex: 1 }}>
+                      <TextField
+                        prefix="R$"
+                        placeholder="Valor do aporte"
+                        keyboardType="numeric"
+                        value={contributionMap[goal.id] ?? ''}
+                        onChangeText={(val) =>
+                          setContributionMap((prev) => ({
+                            ...prev,
+                            [goal.id]: val,
+                          }))
+                        }
+                      />
+                    </View>
+                    <Button
+                      label="Registrar aporte"
+                      variant="secondary"
+                      onPress={() => void handleAddContribution(goal.id)}
+                    />
+                  </View>
+                </Card>
+              );
+            })}
+          </View>
         )}
-      </View>
-
-      <Pressable style={styles.backBtn} onPress={() => router.back()}>
-        <Text style={styles.backBtnText}>Voltar</Text>
-      </Pressable>
-    </ScrollView>
+      </Section>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    backgroundColor: '#0F172A',
-    padding: 18,
-    paddingTop: 44,
-    paddingBottom: 60,
-  },
-  badge: {
-    color: '#34D399',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.1,
-    marginBottom: 4,
-  },
-  title: {
-    color: '#F8FAFC',
-    fontSize: 22,
-    fontWeight: '800',
-    marginBottom: 6,
-  },
-  subtitle: {
-    color: '#94A3B8',
-    fontSize: 12,
-    lineHeight: 18,
-    marginBottom: 14,
-  },
-  statusBox: {
-    backgroundColor: '#064E3B',
-    borderColor: '#10B981',
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 14,
-  },
-  statusText: {
-    color: '#A7F3D0',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  card: {
-    backgroundColor: '#1E293B',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  cardTitle: {
-    color: '#F8FAFC',
-    fontSize: 15,
-    fontWeight: '700',
-    marginBottom: 12,
-  },
-  input: {
-    backgroundColor: '#0F172A',
-    borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: '#F8FAFC',
-    fontSize: 14,
-    marginBottom: 10,
-  },
-  primaryBtn: {
-    backgroundColor: '#10B981',
-    paddingVertical: 13,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  primaryBtnText: {
-    color: '#052E16',
-    fontWeight: '800',
-    fontSize: 14,
-  },
-  emptyText: {
-    color: '#94A3B8',
-    fontSize: 12,
-  },
-  goalItem: {
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#334155',
-  },
-  goalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  goalName: {
-    color: '#F8FAFC',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  goalPct: {
-    color: '#34D399',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  goalMeta: {
-    color: '#CBD5E1',
-    fontSize: 12,
-    marginBottom: 8,
-  },
-  barTrack: {
-    height: 10,
-    backgroundColor: '#0F172A',
-    borderRadius: 6,
-    overflow: 'hidden',
-    marginBottom: 10,
-  },
-  barFill: {
-    height: '100%',
-    backgroundColor: '#10B981',
-  },
-  contribRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  contribInput: {
-    flex: 1,
-    backgroundColor: '#0F172A',
-    borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    color: '#F8FAFC',
-    fontSize: 13,
-  },
-  contribBtn: {
-    backgroundColor: '#38BDF8',
-    paddingHorizontal: 14,
-    justifyContent: 'center',
-    borderRadius: 8,
-  },
-  contribBtnText: {
-    color: '#082F49',
-    fontWeight: '800',
-    fontSize: 12,
-  },
-  backBtn: {
-    borderWidth: 1,
-    borderColor: '#475569',
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  backBtnText: {
-    color: '#E2E8F0',
-    fontWeight: '700',
-  },
-});

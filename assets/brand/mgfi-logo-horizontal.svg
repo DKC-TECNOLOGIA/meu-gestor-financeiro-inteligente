@@ -1,0 +1,6 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 120" fill="none">
+  <path d="M76 30.8 A36 36 0 1 0 89.2 80" stroke="#166534" stroke-width="12" stroke-linecap="round"/>
+  <path d="M58 62 H74 L100 32" stroke="#22C55E" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="128" y="58" fill="#0F172A" font-family="'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.6">Meu Gestor</text>
+  <text x="129" y="92" fill="#4B5D55" font-family="'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="22" font-weight="400" letter-spacing="0.2">Financeiro Inteligente</text>
+</svg>

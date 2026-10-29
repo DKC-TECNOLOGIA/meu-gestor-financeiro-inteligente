@@ -1,12 +1,18 @@
 {
   "expo": {
-    "name": "Financeiro Inteligente",
+    "name": "Meu Gestor Financeiro",
     "slug": "financeiro-inteligente",
     "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "financeirointeligente",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "icon": "./assets/images/icon.png",
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B3D2C"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "br.com.dkctech.financeirointeligente",
@@ -17,7 +23,8 @@
     "android": {
       "package": "br.com.dkctech.financeirointeligente",
       "adaptiveIcon": {
-        "backgroundColor": "#0F172A"
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#0B3D2C"
       },
       "permissions": [
         "android.permission.CAMERA"

@@ -198,6 +198,9 @@ export interface FinanceStoreState {
   bankTransactions: BankTransactionRow[];
   pendingReceiptDraft: ParsedReceiptDraft | null;
   filters: FinanceFilterState;
+  themeMode: 'light' | 'dark';
+  avatarUri: string | null;
+  monthlyObjectiveTargetAmount: number | null;
 
   // Actions
   hydrate: () => Promise<void>;
@@ -205,6 +208,9 @@ export interface FinanceStoreState {
   setReferenceYearMonth: (yearMonth: string) => void;
   setSelectedAccountFilter: (accountId: string | null) => void;
   setSelectedCategoryFilter: (categoryId: string | null) => void;
+  setThemeMode: (mode: 'light' | 'dark') => void;
+  setAvatarUri: (uri: string | null) => void;
+  setMonthlyObjectiveTargetAmount: (amount: number | null) => void;
 
   // Auth & Onboarding (Seção 4)
   completeOnboardingAndSaveProfile: (input: OnboardingInput) => Promise<ProfileRow>;
@@ -348,6 +354,9 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
           aiRecommendations: state.aiRecommendations,
           bankConnections: state.bankConnections,
           bankTransactions: state.bankTransactions,
+          themeMode: state.themeMode,
+          avatarUri: state.avatarUri,
+          monthlyObjectiveTargetAmount: state.monthlyObjectiveTargetAmount,
         }),
       );
     } catch {
@@ -424,8 +433,26 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
       selectedAccountId: null,
       selectedCategoryId: null,
     },
+    themeMode: 'light',
+    avatarUri: null,
+    monthlyObjectiveTargetAmount: null,
 
     clearError: () => set({ errorMessage: null }),
+
+    setThemeMode: (mode: 'light' | 'dark') => {
+      set({ themeMode: mode });
+      void persistLocalSnapshot();
+    },
+
+    setAvatarUri: (uri: string | null) => {
+      set({ avatarUri: uri });
+      void persistLocalSnapshot();
+    },
+
+    setMonthlyObjectiveTargetAmount: (amount: number | null) => {
+      set({ monthlyObjectiveTargetAmount: amount });
+      void persistLocalSnapshot();
+    },
 
     setReferenceYearMonth: (yearMonth: string) =>
       set((s) => ({
@@ -478,6 +505,9 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
             aiRecommendations: parsed.aiRecommendations ?? [],
             bankConnections: parsed.bankConnections ?? [],
             bankTransactions: parsed.bankTransactions ?? [],
+            themeMode: parsed.themeMode ?? 'light',
+            avatarUri: parsed.avatarUri ?? null,
+            monthlyObjectiveTargetAmount: parsed.monthlyObjectiveTargetAmount ?? null,
             isHydrated: true,
             isLoading: false,
           });

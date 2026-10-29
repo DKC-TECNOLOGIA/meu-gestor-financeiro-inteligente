@@ -1,362 +1,274 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, View } from 'react-native';
+import { Plus, ReceiptText, Search, Trash2, X } from 'lucide-react-native';
 import { useFinanceStore } from '@/features/finance/use-finance-store';
 import { TransactionKindType } from '@/types/database.types';
-import { formatCurrencyBRL, formatDateBR } from '@/utils/currency';
+import { formatCurrencyBRL, formatDateBR, sumCurrencyExact } from '@/utils/currency';
+import {
+  Amount,
+  AppText,
+  Button,
+  Card,
+  CategoryIcon,
+  ChipGroup,
+  colors,
+  Divider,
+  EmptyState,
+  IconButton,
+  ListRow,
+  MonthSwitcher,
+  Screen,
+  spacing,
+  TextField,
+  TransactionKindIcon,
+} from '@/ui';
 
 export default function TransactionsScreen() {
   const router = useRouter();
   const transactions = useFinanceStore((s) => s.transactions);
   const categories = useFinanceStore((s) => s.categories);
   const filters = useFinanceStore((s) => s.filters);
+  const setReferenceYearMonth = useFinanceStore((s) => s.setReferenceYearMonth);
   const setSelectedCategoryFilter = useFinanceStore((s) => s.setSelectedCategoryFilter);
   const deleteTransaction = useFinanceStore((s) => s.deleteTransaction);
 
   const [kindFilter, setKindFilter] = useState<'all' | TransactionKindType>('all');
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const categoryNameMap = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const c of categories) {
-      map.set(c.id, c.name);
-    }
-    return map;
-  }, [categories]);
+  const categoryById = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
 
   const filteredList = useMemo(() => {
-    return transactions.filter((tx) => {
-      if (!tx.competence_date.startsWith(filters.referenceYearMonth)) {
-        return false;
-      }
-      if (filters.selectedCategoryId && tx.category_id !== filters.selectedCategoryId) {
-        return false;
-      }
-      if (kindFilter !== 'all' && tx.kind !== kindFilter) {
-        return false;
-      }
-      return true;
-    });
-  }, [transactions, filters.referenceYearMonth, filters.selectedCategoryId, kindFilter]);
+    const q = searchQuery.trim().toLowerCase();
+    return transactions
+      .filter((tx) => {
+        if (!tx.competence_date.startsWith(filters.referenceYearMonth)) return false;
+        if (filters.selectedCategoryId && tx.category_id !== filters.selectedCategoryId) {
+          return false;
+        }
+        if (kindFilter !== 'all' && tx.kind !== kindFilter) return false;
+        if (q) {
+          const catName = tx.category_id
+            ? (categoryById.get(tx.category_id)?.name.toLowerCase() ?? '')
+            : '';
+          if (!tx.description.toLowerCase().includes(q) && !catName.includes(q)) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => b.competence_date.localeCompare(a.competence_date));
+  }, [
+    transactions,
+    filters.referenceYearMonth,
+    filters.selectedCategoryId,
+    kindFilter,
+    searchQuery,
+    categoryById,
+  ]);
+
+  const totals = useMemo(() => {
+    const income = sumCurrencyExact(
+      filteredList.filter((t) => t.kind === 'income').map((t) => t.amount),
+    );
+    const expense = sumCurrencyExact(
+      filteredList.filter((t) => t.kind === 'expense').map((t) => t.amount),
+    );
+    return { income, expense, net: sumCurrencyExact([income, -expense]) };
+  }, [filteredList]);
 
   const handleConfirmDelete = (txId: string, description: string) => {
     Alert.alert(
-      'Confirmar Exclusão',
-      `Deseja realmente excluir o lançamento "${description}"? Esta operação removerá o item do cálculo mensal.`,
+      'Excluir lançamento?',
+      `Deseja remover "${description}"? O saldo do mês será recalculado automaticamente.`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
           text: 'Excluir',
           style: 'destructive',
-          onPress: () => {
-            void deleteTransaction(txId);
-          },
+          onPress: () => void deleteTransaction(txId),
         },
       ],
     );
   };
 
+  const selectedCategoryName = filters.selectedCategoryId
+    ? categoryById.get(filters.selectedCategoryId)?.name
+    : null;
+
   return (
-    <View style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.headerRow}>
-          <View>
-            <Text style={styles.title}>Receitas e Despesas</Text>
-            <Text style={styles.subtitle}>
-              Competência: {filters.referenceYearMonth} • {filteredList.length}{' '}
-              lançamento(s)
-            </Text>
-          </View>
-          <Pressable
-            style={styles.newButton}
+    <Screen
+      header={{
+        title: 'Lançamentos',
+        right: (
+          <Button
+            label="Adicionar"
+            icon={Plus}
+            size="sm"
             onPress={() => router.push('/transactions/new')}
-          >
-            <Text style={styles.newButtonText}>+ Adicionar</Text>
-          </Pressable>
+          />
+        ),
+      }}
+    >
+      {/* Seletor de mês + Resumo de entradas e saídas (inspirado na referência clean) */}
+      <Card style={{ marginBottom: spacing.lg }}>
+        <View style={{ alignItems: 'center', marginBottom: spacing.md }}>
+          <MonthSwitcher
+            value={filters.referenceYearMonth}
+            onChange={setReferenceYearMonth}
+          />
         </View>
-
-        {/* Filtros de Tipo */}
-        <View style={styles.chipsRow}>
-          {(
-            [
-              { value: 'all', label: 'Todos' },
-              { value: 'income', label: 'Receitas' },
-              { value: 'expense', label: 'Despesas' },
-              { value: 'invoice_payment', label: 'Pagto. Fatura' },
-              { value: 'transfer', label: 'Transferências' },
-            ] as const
-          ).map((item) => {
-            const active = kindFilter === item.value;
-            return (
-              <Pressable
-                key={item.value}
-                style={[styles.chip, active && styles.chipActive]}
-                onPress={() => setKindFilter(item.value)}
-              >
-                <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                  {item.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        {filters.selectedCategoryId ? (
-          <Pressable
-            style={styles.activeCategoryBanner}
-            onPress={() => setSelectedCategoryFilter(null)}
+        <View style={{ alignItems: 'center', marginBottom: spacing.lg }}>
+          <AppText variant="caption" tone="secondary">
+            Resultado dos lançamentos filtrados
+          </AppText>
+          <AppText
+            variant="display"
+            tone={totals.net >= 0 ? 'default' : 'negative'}
+            style={{ marginTop: 2 }}
           >
-            <Text style={styles.activeCategoryText}>
-              Filtrado por categoria:{' '}
-              {categoryNameMap.get(filters.selectedCategoryId) ?? 'Selecionada'} (Toque
-              para limpar)
-            </Text>
-          </Pressable>
-        ) : null}
-
-        {filteredList.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <Text style={styles.emptyTitle}>Nenhum lançamento encontrado</Text>
-            <Text style={styles.emptyDesc}>
-              Registre receitas, despesas, compras no cartão ou transferências para
-              acompanhar a evolução do seu orçamento em {filters.referenceYearMonth}.
-            </Text>
-            <Pressable
-              style={styles.emptyCta}
-              onPress={() => router.push('/transactions/new')}
+            {totals.net < 0 ? '− ' : ''}
+            {formatCurrencyBRL(Math.abs(totals.net))}
+          </AppText>
+        </View>
+        <View
+          style={{
+            flexDirection: 'row',
+            borderTopWidth: 1,
+            borderTopColor: colors.border,
+            paddingTop: spacing.md,
+          }}
+        >
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <AppText variant="caption" tone="secondary">
+              Entradas
+            </AppText>
+            <AppText
+              variant="bodyStrong"
+              tone="positive"
+              style={{ fontVariant: ['tabular-nums'], marginTop: 2 }}
             >
-              <Text style={styles.emptyCtaText}>Criar Primeiro Lançamento</Text>
-            </Pressable>
+              {formatCurrencyBRL(totals.income)}
+            </AppText>
           </View>
+          <View style={{ width: 1, backgroundColor: colors.border }} />
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <AppText variant="caption" tone="secondary">
+              Despesas
+            </AppText>
+            <AppText
+              variant="bodyStrong"
+              style={{ fontVariant: ['tabular-nums'], marginTop: 2 }}
+            >
+              − {formatCurrencyBRL(totals.expense)}
+            </AppText>
+          </View>
+        </View>
+      </Card>
+
+      {/* Busca rápida */}
+      <TextField
+        icon={Search}
+        placeholder="Buscar por descrição ou categoria…"
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+      />
+
+      {/* Filtros por tipo */}
+      <ChipGroup
+        style={{ marginTop: spacing.md, marginBottom: spacing.lg }}
+        value={kindFilter}
+        onChange={setKindFilter}
+        options={[
+          { value: 'all', label: 'Todos' },
+          { value: 'expense', label: 'Despesas' },
+          { value: 'income', label: 'Receitas' },
+          { value: 'invoice_payment', label: 'Faturas' },
+          { value: 'transfer', label: 'Transferências' },
+        ]}
+      />
+
+      {selectedCategoryName ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setSelectedCategoryFilter(null)}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            backgroundColor: colors.brandSoft,
+            borderRadius: 10,
+            paddingHorizontal: spacing.md,
+            paddingVertical: spacing.sm,
+            marginBottom: spacing.md,
+          }}
+        >
+          <AppText variant="label" tone="brand" style={{ fontWeight: '600' }}>
+            Categoria: {selectedCategoryName}
+          </AppText>
+          <X color={colors.brand} size={16} />
+        </Pressable>
+      ) : null}
+
+      {/* Lista de lançamentos */}
+      <Card padded={false} style={{ paddingHorizontal: spacing.lg }}>
+        {filteredList.length === 0 ? (
+          <EmptyState
+            icon={ReceiptText}
+            title="Nenhum lançamento encontrado"
+            description="Adicione uma receita, despesa ou escaneie uma nota fiscal para começar."
+            actionLabel="Novo lançamento"
+            onAction={() => router.push('/transactions/new')}
+          />
         ) : (
-          filteredList.map((tx) => {
-            const isIncome = tx.kind === 'income';
-            const isTransfer = tx.kind === 'transfer';
-            const amountColor = isIncome
-              ? '#34D399'
-              : isTransfer
-                ? '#38BDF8'
-                : '#F87171';
-
+          filteredList.map((tx, idx) => {
+            const cat = tx.category_id ? categoryById.get(tx.category_id) : undefined;
+            const subtitleParts = [
+              cat?.name ??
+                (tx.kind === 'transfer' ? 'Transferência' : 'Pagamento de fatura'),
+              formatDateBR(tx.competence_date),
+              tx.payment_method.toUpperCase(),
+            ];
+            if (tx.is_fixed) subtitleParts.push('Fixa');
             return (
-              <View key={tx.id} style={styles.txCard}>
-                <View style={styles.txMainRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.txDescription}>{tx.description}</Text>
-                    <Text style={styles.txMeta}>
-                      {tx.category_id
-                        ? (categoryNameMap.get(tx.category_id) ?? 'Categoria')
-                        : tx.kind === 'transfer'
-                          ? 'Transferência entre contas'
-                          : 'Pagamento de fatura'}{' '}
-                      • Competência: {formatDateBR(tx.competence_date)}
-                    </Text>
-                    <Text style={styles.txBadges}>
-                      Forma: {tx.payment_method.toUpperCase()} • Status: {tx.status} •
-                      Origem: {tx.origin}
-                      {tx.is_fixed ? ' • Fixa' : ''}
-                      {tx.is_recurring ? ' • Recorrente' : ''}
-                    </Text>
-                  </View>
-                  <Text style={[styles.txAmount, { color: amountColor }]}>
-                    {isIncome ? '+' : isTransfer ? '⇄ ' : '-'}
-                    {formatCurrencyBRL(tx.amount)}
-                  </Text>
-                </View>
-
-                <View style={styles.txActionsRow}>
-                  <Pressable
-                    style={styles.editBtn}
-                    onPress={() => router.push(`/transactions/${tx.id}`)}
-                  >
-                    <Text style={styles.editBtnText}>Editar</Text>
-                  </Pressable>
-                  <Pressable
-                    style={styles.deleteBtn}
-                    onPress={() => handleConfirmDelete(tx.id, tx.description)}
-                  >
-                    <Text style={styles.deleteBtnText}>Excluir</Text>
-                  </Pressable>
-                </View>
+              <View key={tx.id}>
+                {idx > 0 ? <Divider inset={52} /> : null}
+                <ListRow
+                  onPress={() => router.push(`/transactions/${tx.id}`)}
+                  leading={
+                    cat ? (
+                      <CategoryIcon icon={cat.icon} colorHex={cat.color_hex} />
+                    ) : (
+                      <TransactionKindIcon kind={tx.kind} />
+                    )
+                  }
+                  title={tx.description}
+                  subtitle={subtitleParts.join(' · ')}
+                  trailing={
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                      <Amount
+                        value={tx.amount}
+                        kind={
+                          tx.kind === 'income'
+                            ? 'income'
+                            : tx.kind === 'transfer'
+                              ? 'neutral'
+                              : 'expense'
+                        }
+                      />
+                      <IconButton
+                        icon={Trash2}
+                        size={32}
+                        variant="ghost"
+                        accessibilityLabel={`Excluir ${tx.description}`}
+                        onPress={() => handleConfirmDelete(tx.id, tx.description)}
+                      />
+                    </View>
+                  }
+                />
               </View>
             );
           })
         )}
-      </ScrollView>
-    </View>
+      </Card>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#0F172A',
-  },
-  container: {
-    padding: 18,
-    paddingTop: 44,
-    paddingBottom: 60,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  title: {
-    color: '#F8FAFC',
-    fontSize: 22,
-    fontWeight: '800',
-  },
-  subtitle: {
-    color: '#94A3B8',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  newButton: {
-    backgroundColor: '#10B981',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
-  },
-  newButtonText: {
-    color: '#052E16',
-    fontWeight: '800',
-    fontSize: 13,
-  },
-  chipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 14,
-  },
-  chip: {
-    backgroundColor: '#1E293B',
-    borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 18,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  chipActive: {
-    backgroundColor: '#10B981',
-    borderColor: '#10B981',
-  },
-  chipText: {
-    color: '#CBD5E1',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  chipTextActive: {
-    color: '#052E16',
-    fontWeight: '800',
-  },
-  activeCategoryBanner: {
-    backgroundColor: '#0C4A6E',
-    borderColor: '#38BDF8',
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 14,
-  },
-  activeCategoryText: {
-    color: '#E0F2FE',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  emptyCard: {
-    backgroundColor: '#1E293B',
-    borderRadius: 16,
-    padding: 24,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  emptyTitle: {
-    color: '#F8FAFC',
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  emptyDesc: {
-    color: '#94A3B8',
-    fontSize: 13,
-    textAlign: 'center',
-    lineHeight: 19,
-    marginBottom: 16,
-  },
-  emptyCta: {
-    backgroundColor: '#10B981',
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 10,
-  },
-  emptyCtaText: {
-    color: '#052E16',
-    fontWeight: '800',
-    fontSize: 14,
-  },
-  txCard: {
-    backgroundColor: '#1E293B',
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  txMainRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: 10,
-  },
-  txDescription: {
-    color: '#F8FAFC',
-    fontSize: 15,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  txMeta: {
-    color: '#CBD5E1',
-    fontSize: 12,
-    marginBottom: 4,
-  },
-  txBadges: {
-    color: '#64748B',
-    fontSize: 11,
-  },
-  txAmount: {
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  txActionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 10,
-    marginTop: 10,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#334155',
-  },
-  editBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 8,
-    backgroundColor: '#334155',
-  },
-  editBtnText: {
-    color: '#E2E8F0',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  deleteBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 8,
-    backgroundColor: '#450A0A',
-  },
-  deleteBtnText: {
-    color: '#FCA5A5',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-});
