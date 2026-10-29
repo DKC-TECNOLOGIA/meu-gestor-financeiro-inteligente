@@ -7,6 +7,13 @@
     "scheme": "financeirointeligente",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "br.com.dkctech.financeirointeligente",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Permita o acesso à câmera para ler o QR Code de notas fiscais (NFC-e)."
+      }
+    },
     "android": {
       "package": "br.com.dkctech.financeirointeligente",
       "adaptiveIcon": {
@@ -24,7 +31,10 @@
         {
           "cameraPermission": "Permita o acesso à câmera para ler o QR Code de notas fiscais (NFC-e)."
         }
-      ]
+      ],
+      "expo-font",
+      "expo-sharing",
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": true
