@@ -14,16 +14,17 @@ import {
   Button,
   Card,
   Chip,
-  colors,
   InlineMessage,
   Screen,
   SegmentedControl,
   spacing,
   TextField,
+  useThemeColors,
 } from '@/ui';
 
 export default function TransactionFormScreen() {
   const router = useRouter();
+  const colors = useThemeColors();
   const params = useLocalSearchParams<{ id?: string; kind?: TransactionKindType }>();
   const isNew = !params.id || params.id === 'new';
 

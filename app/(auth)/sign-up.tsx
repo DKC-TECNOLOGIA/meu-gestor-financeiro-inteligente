@@ -1,18 +1,27 @@
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { View } from 'react-native';
+import { KeyRound, Mail, UserPlus, UserRound } from 'lucide-react-native';
+import { useFinanceStore } from '@/features/finance/use-finance-store';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
+import {
+  AppText,
+  Badge,
+  BrandLogo,
+  Button,
+  Card,
+  InlineMessage,
+  Screen,
+  spacing,
+  TextField,
+} from '@/ui';
 
 export default function SignUpScreen() {
   const router = useRouter();
+  const switchAuthenticatedUserContext = useFinanceStore(
+    (s) => s.switchAuthenticatedUserContext,
+  );
+
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -37,7 +46,7 @@ export default function SignUpScreen() {
     setIsLoading(true);
     try {
       if (isSupabaseConfigured) {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email: email.trim(),
           password,
           options: {
@@ -46,6 +55,9 @@ export default function SignUpScreen() {
         });
         if (error) {
           throw new Error(error.message);
+        }
+        if (data.user?.id) {
+          switchAuthenticatedUserContext(data.user.id);
         }
       }
       router.replace('/(auth)/onboarding');
@@ -59,157 +71,82 @@ export default function SignUpScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <View style={styles.card}>
-        <Text style={styles.badge}>TELA 2 • CADASTRO E AUTENTICAÇÃO</Text>
-        <Text style={styles.title}>Criar Conta Segura</Text>
-        <Text style={styles.subtitle}>
-          Seus dados são protegidos com isolamento individual por usuário (Row Level
-          Security). Após criar o acesso, você definirá seus objetivos financeiros.
-        </Text>
+    <Screen
+      header={{
+        title: 'Criar Conta Segura',
+        subtitle:
+          'Seus dados são protegidos com isolamento individual por usuário (Row Level Security).',
+        showBack: true,
+      }}
+    >
+      <View
+        style={{
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: spacing.lg,
+        }}
+      >
+        <BrandLogo size={36} />
+        <Badge tone="brand" label="CADASTRO SEGURO" />
+      </View>
 
-        {errorMessage ? (
-          <View style={styles.errorBox}>
-            <Text style={styles.errorText}>{errorMessage}</Text>
-          </View>
-        ) : null}
+      {errorMessage ? (
+        <InlineMessage
+          tone="danger"
+          message={errorMessage}
+          style={{ marginBottom: spacing.lg }}
+        />
+      ) : null}
 
-        <Text style={styles.label}>Nome de exibição *</Text>
-        <TextInput
-          style={styles.input}
+      <Card style={{ gap: spacing.lg }}>
+        <TextField
+          label="Nome de exibição *"
+          icon={UserRound}
           placeholder="Seu nome"
-          placeholderTextColor="#64748B"
           value={displayName}
           onChangeText={setDisplayName}
         />
 
-        <Text style={styles.label}>E-mail *</Text>
-        <TextInput
-          style={styles.input}
+        <TextField
+          label="E-mail *"
+          icon={Mail}
           placeholder="voce@exemplo.com.br"
-          placeholderTextColor="#64748B"
           keyboardType="email-address"
           autoCapitalize="none"
           value={email}
           onChangeText={setEmail}
         />
 
-        <Text style={styles.label}>Senha (mínimo 6 caracteres) *</Text>
-        <TextInput
-          style={styles.input}
+        <TextField
+          label="Senha (mínimo 6 caracteres) *"
+          icon={KeyRound}
           placeholder="••••••••"
-          placeholderTextColor="#64748B"
           secureTextEntry
           value={password}
           onChangeText={setPassword}
         />
 
-        <Pressable
-          accessibilityRole="button"
-          style={styles.primaryBtn}
+        <Button
+          label="Criar Conta e Definir Objetivos"
+          icon={UserPlus}
+          loading={isLoading}
+          fullWidth
           onPress={() => void handleSignUp()}
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <ActivityIndicator color="#052E16" />
-          ) : (
-            <Text style={styles.primaryBtnText}>
-              Criar Conta e Definir Objetivos
-            </Text>
-          )}
-        </Pressable>
+        />
+      </Card>
 
-        <Pressable
-          style={styles.linkBtn}
+      <View style={{ marginTop: spacing.xl, gap: spacing.sm }}>
+        <AppText variant="caption" tone="secondary" align="center">
+          Já possui conta cadastrada?
+        </AppText>
+        <Button
+          label="Entrar na conta existente"
+          variant="secondary"
+          fullWidth
           onPress={() => router.push('/(auth)/sign-in')}
-        >
-          <Text style={styles.linkBtnText}>Já possui conta? Entrar</Text>
-        </Pressable>
+        />
       </View>
-    </ScrollView>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    backgroundColor: '#0F172A',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  card: {
-    backgroundColor: '#1E293B',
-    borderRadius: 20,
-    padding: 24,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  badge: {
-    color: '#34D399',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.1,
-    marginBottom: 6,
-  },
-  title: {
-    color: '#F8FAFC',
-    fontSize: 24,
-    fontWeight: '800',
-    marginBottom: 8,
-  },
-  subtitle: {
-    color: '#94A3B8',
-    fontSize: 13,
-    lineHeight: 19,
-    marginBottom: 18,
-  },
-  errorBox: {
-    backgroundColor: '#450A0A',
-    borderColor: '#EF4444',
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 14,
-  },
-  errorText: {
-    color: '#FCA5A5',
-    fontSize: 13,
-  },
-  label: {
-    color: '#E2E8F0',
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 6,
-  },
-  input: {
-    backgroundColor: '#0F172A',
-    borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    color: '#F8FAFC',
-    fontSize: 15,
-    marginBottom: 14,
-  },
-  primaryBtn: {
-    backgroundColor: '#10B981',
-    paddingVertical: 15,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  primaryBtnText: {
-    color: '#052E16',
-    fontWeight: '800',
-    fontSize: 15,
-  },
-  linkBtn: {
-    marginTop: 16,
-    alignItems: 'center',
-  },
-  linkBtnText: {
-    color: '#38BDF8',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-});

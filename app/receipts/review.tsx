@@ -1,13 +1,7 @@
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { View } from 'react-native';
+import { Check, Plus, ReceiptText, Trash2 } from 'lucide-react-native';
 import {
   normalizeProductName,
   ParsedReceiptItemDraft,
@@ -15,6 +9,24 @@ import {
 import { useFinanceStore } from '@/features/finance/use-finance-store';
 import { MeasurementUnitType } from '@/types/database.types';
 import { formatCurrencyBRL, fromCents, toCents } from '@/utils/currency';
+import {
+  Amount,
+  AppText,
+  Badge,
+  Button,
+  Card,
+  Chip,
+  Divider,
+  EmptyState,
+  IconButton,
+  InlineMessage,
+  ListRow,
+  Screen,
+  Section,
+  SectionHeader,
+  spacing,
+  TextField,
+} from '@/ui';
 
 export default function ReceiptReviewScreen() {
   const router = useRouter();
@@ -128,319 +140,180 @@ export default function ReceiptReviewScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.badge}>PASSO 7 E 8 • TELA DE REVISÃO DA NOTA</Text>
-      <Text style={styles.title}>Revisar e Confirmar Nota Fiscal</Text>
+    <Screen
+      header={{
+        title: 'Revisar e Confirmar Nota Fiscal',
+        subtitle: 'Confira o estabelecimento e os itens antes de atualizar o histórico de preços.',
+        showBack: true,
+      }}
+      footer={
+        <Button
+          label={`Confirmar Nota (${formatCurrencyBRL(totalNetComputed)})`}
+          icon={Check}
+          fullWidth
+          onPress={() => void handleConfirmReceipt()}
+        />
+      }
+    >
       {pendingDraft?.statusMessage ? (
-        <Text style={styles.infoBanner}>{pendingDraft.statusMessage}</Text>
+        <InlineMessage
+          tone="info"
+          message={pendingDraft.statusMessage}
+          style={{ marginBottom: spacing.lg }}
+        />
       ) : null}
 
       {errorMessage ? (
-        <View style={styles.errorBox}>
-          <Text style={styles.errorText}>{errorMessage}</Text>
-        </View>
+        <InlineMessage
+          tone="danger"
+          message={errorMessage}
+          style={{ marginBottom: spacing.lg }}
+        />
       ) : null}
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Dados do Estabelecimento e Emissão</Text>
+      <Card style={{ gap: spacing.md }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <AppText variant="heading">Estabelecimento e Emissão</AppText>
+          {pendingDraft?.issuerUf ? (
+            <Badge tone="brand" label={`UF ${pendingDraft.issuerUf}`} />
+          ) : null}
+        </View>
         {pendingDraft?.accessKey ? (
-          <Text style={styles.keyText}>Chave NFC-e: {pendingDraft.accessKey}</Text>
+          <AppText variant="caption" tone="secondary" style={{ fontVariant: ['tabular-nums'] }}>
+            Chave NFC-e: {pendingDraft.accessKey}
+          </AppText>
         ) : null}
 
-        <Text style={styles.label}>Nome do Supermercado / Estabelecimento *</Text>
-        <TextInput
-          style={styles.input}
+        <TextField
+          label="Nome do Supermercado / Estabelecimento *"
           value={merchantName}
           onChangeText={setMerchantName}
           placeholder="Ex.: Atakarejo Salvador, Hiperideal, Assaí"
-          placeholderTextColor="#64748B"
         />
 
-        <Text style={styles.label}>Data da Compra (AAAA-MM-DD) *</Text>
-        <TextInput
-          style={styles.input}
+        <TextField
+          label="Data da Compra (AAAA-MM-DD) *"
           value={issuedDate}
           onChangeText={setIssuedDate}
           placeholder="2026-10-15"
-          placeholderTextColor="#64748B"
         />
-      </View>
+      </Card>
 
       {/* Adicionar / Corrigir Item */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Adicionar Produto à Nota</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Nome do produto (ex.: ARROZ TIPO 1 1KG)"
-          placeholderTextColor="#64748B"
-          value={itemName}
-          onChangeText={setItemName}
+      <Section>
+        <SectionHeader
+          title="Adicionar Produto à Nota"
+          description="Informe descrição, unidade e preço unitário."
         />
-        <TextInput
-          style={styles.input}
-          placeholder="Código de barras EAN opcional (ex.: 7891000100103)"
-          placeholderTextColor="#64748B"
-          keyboardType="numeric"
-          value={itemEan}
-          onChangeText={setItemEan}
-        />
+        <Card style={{ gap: spacing.md }}>
+          <TextField
+            label="Nome do produto *"
+            placeholder="Ex.: ARROZ TIPO 1 1KG"
+            value={itemName}
+            onChangeText={setItemName}
+          />
+          <TextField
+            label="Código de barras EAN (opcional)"
+            placeholder="Ex.: 7891000100103"
+            keyboardType="numeric"
+            value={itemEan}
+            onChangeText={setItemEan}
+          />
 
-        <View style={styles.row}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.label}>Qtd</Text>
-            <TextInput
-              style={styles.input}
-              keyboardType="numeric"
-              value={itemQtyText}
-              onChangeText={setItemQtyText}
-            />
+          <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+            <View style={{ flex: 1 }}>
+              <TextField
+                label="Qtd"
+                keyboardType="numeric"
+                value={itemQtyText}
+                onChangeText={setItemQtyText}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <TextField
+                label="Preço Unit."
+                prefix="R$"
+                keyboardType="numeric"
+                placeholder="0,00"
+                value={itemPriceText}
+                onChangeText={setItemPriceText}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <TextField
+                label="Desc. Unit."
+                prefix="R$"
+                keyboardType="numeric"
+                value={itemDiscountText}
+                onChangeText={setItemDiscountText}
+              />
+            </View>
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.label}>Preço Unit. (R$)</Text>
-            <TextInput
-              style={styles.input}
-              keyboardType="numeric"
-              placeholder="0,00"
-              placeholderTextColor="#64748B"
-              value={itemPriceText}
-              onChangeText={setItemPriceText}
-            />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.label}>Desc. Unit. (R$)</Text>
-            <TextInput
-              style={styles.input}
-              keyboardType="numeric"
-              value={itemDiscountText}
-              onChangeText={setItemDiscountText}
-            />
-          </View>
-        </View>
 
-        <Text style={styles.label}>Unidade de Medida</Text>
-        <View style={styles.chipsRow}>
-          {(['UN', 'KG', 'G', 'L', 'ML', 'PCT', 'CX'] as const).map((u) => {
-            const active = itemUnit === u;
-            return (
-              <Pressable
-                key={u}
-                style={[styles.chip, active && styles.chipActive]}
-                onPress={() => setItemUnit(u)}
-              >
-                <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                  {u}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+          <View style={{ gap: spacing.xs }}>
+            <AppText variant="label" tone="secondary">
+              Unidade de medida
+            </AppText>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+              {(['UN', 'KG', 'G', 'L', 'ML', 'PCT', 'CX'] as const).map((u) => (
+                <Chip
+                  key={u}
+                  label={u}
+                  selected={itemUnit === u}
+                  onPress={() => setItemUnit(u)}
+                />
+              ))}
+            </View>
+          </View>
 
-        <Pressable style={styles.addBtn} onPress={handleAddItem}>
-          <Text style={styles.addBtnText}>+ Incluir Item na Revisão</Text>
-        </Pressable>
-      </View>
+          <Button
+            label="Incluir Item na Revisão"
+            icon={Plus}
+            variant="secondary"
+            fullWidth
+            onPress={handleAddItem}
+          />
+        </Card>
+      </Section>
 
       {/* Itens Revisados */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>
-          Itens da Nota ({items.length}) • Total Líquido:{' '}
-          {formatCurrencyBRL(totalNetComputed)}
-        </Text>
-        {items.map((it) => (
-          <View key={it.itemSequence} style={styles.itemRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.itemName}>{it.originalProductName}</Text>
-              <Text style={styles.itemMeta}>
-                {it.quantity} {it.measurementUnit} ×{' '}
-                {formatCurrencyBRL(it.unitNetPricePaid)}
-                {it.eanBarcode ? ` • EAN ${it.eanBarcode}` : ''}
-              </Text>
-            </View>
-            <Text style={styles.itemTotal}>{formatCurrencyBRL(it.totalNetPaid)}</Text>
-            <Pressable
-              style={styles.removeBtn}
-              onPress={() => handleRemoveItem(it.itemSequence)}
-            >
-              <Text style={styles.removeBtnText}>Remover</Text>
-            </Pressable>
-          </View>
-        ))}
-      </View>
-
-      <Pressable
-        style={styles.confirmBtn}
-        onPress={() => void handleConfirmReceipt()}
-      >
-        <Text style={styles.confirmBtnText}>
-          Confirmar Nota e Atualizar Histórico de Preços
-        </Text>
-      </Pressable>
-    </ScrollView>
+      <Section>
+        <SectionHeader
+          title={`Itens da Nota (${items.length})`}
+          description={`Total líquido: ${formatCurrencyBRL(totalNetComputed)}`}
+        />
+        <Card padded={false} style={{ paddingHorizontal: spacing.lg }}>
+          {items.length === 0 ? (
+            <EmptyState
+              icon={ReceiptText}
+              title="Nenhum item na nota ainda"
+              description="Adicione pelo menos 1 produto acima antes de confirmar a nota."
+            />
+          ) : (
+            items.map((it, idx) => (
+              <View key={it.itemSequence}>
+                {idx > 0 ? <Divider /> : null}
+                <ListRow
+                  title={it.originalProductName}
+                  subtitle={`${it.quantity} ${it.measurementUnit} × ${formatCurrencyBRL(it.unitNetPricePaid)}${it.eanBarcode ? ` · EAN ${it.eanBarcode}` : ''}`}
+                  trailing={
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                      <Amount value={it.totalNetPaid} />
+                      <IconButton
+                        icon={Trash2}
+                        size={32}
+                        variant="danger"
+                        accessibilityLabel={`Remover ${it.originalProductName}`}
+                        onPress={() => handleRemoveItem(it.itemSequence)}
+                      />
+                    </View>
+                  }
+                />
+              </View>
+            ))
+          )}
+        </Card>
+      </Section>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    backgroundColor: '#0F172A',
-    padding: 18,
-    paddingTop: 44,
-    paddingBottom: 60,
-  },
-  badge: {
-    color: '#34D399',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.1,
-    marginBottom: 4,
-  },
-  title: {
-    color: '#F8FAFC',
-    fontSize: 22,
-    fontWeight: '800',
-    marginBottom: 10,
-  },
-  infoBanner: {
-    backgroundColor: '#0C4A6E',
-    color: '#E0F2FE',
-    padding: 12,
-    borderRadius: 10,
-    fontSize: 12,
-    lineHeight: 18,
-    marginBottom: 14,
-  },
-  errorBox: {
-    backgroundColor: '#450A0A',
-    borderColor: '#EF4444',
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 14,
-  },
-  errorText: {
-    color: '#FCA5A5',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  card: {
-    backgroundColor: '#1E293B',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  cardTitle: {
-    color: '#F8FAFC',
-    fontSize: 15,
-    fontWeight: '700',
-    marginBottom: 10,
-  },
-  keyText: {
-    color: '#38BDF8',
-    fontSize: 11,
-    fontFamily: 'monospace',
-    marginBottom: 10,
-  },
-  label: {
-    color: '#CBD5E1',
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  input: {
-    backgroundColor: '#0F172A',
-    borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: '#F8FAFC',
-    fontSize: 14,
-    marginBottom: 10,
-  },
-  row: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  chipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 12,
-  },
-  chip: {
-    backgroundColor: '#0F172A',
-    borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  chipActive: {
-    backgroundColor: '#10B981',
-    borderColor: '#10B981',
-  },
-  chipText: {
-    color: '#CBD5E1',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  chipTextActive: {
-    color: '#052E16',
-    fontWeight: '800',
-  },
-  addBtn: {
-    backgroundColor: '#38BDF8',
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  addBtnText: {
-    color: '#082F49',
-    fontWeight: '800',
-    fontSize: 13,
-  },
-  itemRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#334155',
-  },
-  itemName: {
-    color: '#F8FAFC',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  itemMeta: {
-    color: '#94A3B8',
-    fontSize: 11,
-  },
-  itemTotal: {
-    color: '#34D399',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  removeBtn: {
-    backgroundColor: '#450A0A',
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 6,
-  },
-  removeBtnText: {
-    color: '#FCA5A5',
-    fontSize: 11,
-  },
-  confirmBtn: {
-    backgroundColor: '#10B981',
-    paddingVertical: 16,
-    borderRadius: 14,
-    alignItems: 'center',
-  },
-  confirmBtnText: {
-    color: '#052E16',
-    fontWeight: '800',
-    fontSize: 15,
-  },
-});

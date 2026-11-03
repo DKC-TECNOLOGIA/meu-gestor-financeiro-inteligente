@@ -12,7 +12,6 @@ import {
   Card,
   CategoryIcon,
   ChipGroup,
-  colors,
   Divider,
   EmptyState,
   IconButton,
@@ -22,10 +21,12 @@ import {
   spacing,
   TextField,
   TransactionKindIcon,
+  useThemeColors,
 } from '@/ui';
 
 export default function TransactionsScreen() {
   const router = useRouter();
+  const colors = useThemeColors();
   const transactions = useFinanceStore((s) => s.transactions);
   const categories = useFinanceStore((s) => s.categories);
   const filters = useFinanceStore((s) => s.filters);

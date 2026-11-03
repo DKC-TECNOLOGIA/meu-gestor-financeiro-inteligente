@@ -10,17 +10,18 @@ import {
   Badge,
   Button,
   Card,
-  colors,
   Divider,
   EmptyState,
   InlineMessage,
   Screen,
   spacing,
   TextField,
+  useThemeColors,
 } from '@/ui';
 
 export default function AdvisorScreen() {
   const router = useRouter();
+  const colors = useThemeColors();
   const aiRecommendations = useFinanceStore((s) => s.aiRecommendations);
   const filters = useFinanceStore((s) => s.filters);
   const generateAdvisorRecommendations = useFinanceStore(

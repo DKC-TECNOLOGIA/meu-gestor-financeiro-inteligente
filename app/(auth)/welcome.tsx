@@ -7,13 +7,14 @@ import {
   BrandLogo,
   Button,
   Card,
-  colors,
   Screen,
   spacing,
+  useThemeColors,
 } from '@/ui';
 
 export default function WelcomeScreen() {
   const router = useRouter();
+  const c = useThemeColors();
 
   const pillars = [
     {
@@ -77,13 +78,13 @@ export default function WelcomeScreen() {
                     width: 36,
                     height: 36,
                     borderRadius: 18,
-                    backgroundColor: colors.brandSoft,
+                    backgroundColor: c.brandSoft,
                     alignItems: 'center',
                     justifyContent: 'center',
                     marginTop: 2,
                   }}
                 >
-                  <Icon color={colors.brand} size={18} />
+                  <Icon color={c.brand} size={18} />
                 </View>
                 <View style={{ flex: 1, gap: 2 }}>
                   <AppText variant="bodyStrong">{p.title}</AppText>
@@ -91,7 +92,7 @@ export default function WelcomeScreen() {
                     {p.desc}
                   </AppText>
                 </View>
-                <Check color={colors.accent} size={16} style={{ marginTop: 4 }} />
+                <Check color={c.accent} size={16} style={{ marginTop: 4 }} />
               </View>
             );
           })}

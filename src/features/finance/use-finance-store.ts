@@ -406,6 +406,16 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
 
   const defaultUserId = 'local-authenticated-user';
 
+  const getActiveSupabaseUserId = async (): Promise<string | null> => {
+    if (!isSupabaseConfigured) return null;
+    try {
+      const { data } = await supabase.auth.getSession();
+      return data.session?.user?.id ?? null;
+    } catch {
+      return null;
+    }
+  };
+
   return {
     isHydrated: false,
     isLoading: false,
@@ -511,37 +521,117 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
             isHydrated: true,
             isLoading: false,
           });
-          return;
         }
 
-        if (isSupabaseConfigured) {
-          const { data: sessionData } = await supabase.auth.getSession();
-          const uid = sessionData.session?.user?.id;
-          if (uid) {
-            const [{ data: profileData }, { data: catsData }, { data: txData }] =
-              await Promise.all([
-                supabase.from('profiles').select('*').eq('id', uid).maybeSingle(),
-                supabase.from('categories').select('*').eq('is_active', true),
-                supabase
-                  .from('transactions')
-                  .select('*')
-                  .eq('user_id', uid)
-                  .order('competence_date', { ascending: false }),
-              ]);
+        const uid = await getActiveSupabaseUserId();
+        if (uid) {
+          const [
+            { data: profileData },
+            { data: catsData },
+            { data: accountsData },
+            { data: cardsData },
+            { data: invoicesData },
+            { data: txData },
+            { data: receiptsData },
+            { data: receiptItemsData },
+            { data: catalogData },
+            { data: goalsData },
+            { data: goalsProgressData },
+            { data: gamEventsData },
+            { data: userLevelData },
+            { data: aiRecsData },
+            { data: bankConnsData },
+            { data: bankTxsData },
+          ] = await Promise.all([
+            supabase.from('profiles').select('*').eq('id', uid).maybeSingle(),
+            supabase.from('categories').select('*').eq('is_active', true),
+            supabase.from('accounts').select('*').eq('user_id', uid),
+            supabase.from('credit_cards').select('*').eq('user_id', uid),
+            supabase.from('card_invoices').select('*').eq('user_id', uid),
+            supabase
+              .from('transactions')
+              .select('*')
+              .eq('user_id', uid)
+              .order('competence_date', { ascending: false }),
+            supabase.from('receipts').select('*').eq('user_id', uid),
+            supabase.from('receipt_items').select('*').eq('user_id', uid),
+            supabase.from('product_catalog').select('*').eq('user_id', uid),
+            supabase.from('financial_goals').select('*').eq('user_id', uid),
+            supabase.from('goals_progress').select('*').eq('user_id', uid),
+            supabase.from('gamification_events').select('*').eq('user_id', uid),
+            supabase.from('user_levels').select('*').eq('user_id', uid).maybeSingle(),
+            supabase.from('ai_recommendations').select('*').eq('user_id', uid),
+            supabase.from('bank_connections').select('*').eq('user_id', uid),
+            supabase.from('bank_transactions').select('*').eq('user_id', uid),
+          ]);
 
-            set({
-              currentUserId: uid,
-              profile: (profileData as ProfileRow | null) ?? null,
-              categories:
-                catsData && catsData.length > 0
-                  ? (catsData as CategoryRow[])
-                  : buildDefaultSystemCategories(),
-              transactions: (txData as TransactionRow[]) ?? [],
-              isHydrated: true,
-              isLoading: false,
-            });
-            return;
-          }
+          const curr = get();
+          set({
+            currentUserId: uid,
+            profile: (profileData as ProfileRow | null) ?? curr.profile,
+            categories:
+              catsData && catsData.length > 0
+                ? (catsData as CategoryRow[])
+                : curr.categories,
+            accounts:
+              accountsData && accountsData.length > 0
+                ? (accountsData as AccountRow[])
+                : curr.accounts,
+            creditCards:
+              cardsData && cardsData.length > 0
+                ? (cardsData as CreditCardRow[])
+                : curr.creditCards,
+            cardInvoices:
+              invoicesData && invoicesData.length > 0
+                ? (invoicesData as CardInvoiceRow[])
+                : curr.cardInvoices,
+            transactions:
+              txData && txData.length > 0
+                ? (txData as TransactionRow[])
+                : curr.transactions,
+            receipts:
+              receiptsData && receiptsData.length > 0
+                ? (receiptsData as ReceiptRow[])
+                : curr.receipts,
+            receiptItems:
+              receiptItemsData && receiptItemsData.length > 0
+                ? (receiptItemsData as ReceiptItemRow[])
+                : curr.receiptItems,
+            productCatalog:
+              catalogData && catalogData.length > 0
+                ? (catalogData as ProductCatalogRow[])
+                : curr.productCatalog,
+            financialGoals:
+              goalsData && goalsData.length > 0
+                ? (goalsData as FinancialGoalRow[])
+                : curr.financialGoals,
+            goalsProgress:
+              goalsProgressData && goalsProgressData.length > 0
+                ? (goalsProgressData as GoalProgressRow[])
+                : curr.goalsProgress,
+            gamificationEvents:
+              gamEventsData && gamEventsData.length > 0
+                ? (gamEventsData as GamificationEventRow[])
+                : curr.gamificationEvents,
+            userLevel:
+              (userLevelData as UserLevelRow | null) ?? curr.userLevel,
+            aiRecommendations:
+              aiRecsData && aiRecsData.length > 0
+                ? (aiRecsData as AiRecommendationRow[])
+                : curr.aiRecommendations,
+            bankConnections:
+              bankConnsData && bankConnsData.length > 0
+                ? (bankConnsData as BankConnectionRow[])
+                : curr.bankConnections,
+            bankTransactions:
+              bankTxsData && bankTxsData.length > 0
+                ? (bankTxsData as BankTransactionRow[])
+                : curr.bankTransactions,
+            isHydrated: true,
+            isLoading: false,
+          });
+          await persistLocalSnapshot();
+          return;
         }
 
         set({ isHydrated: true, isLoading: false });
@@ -660,6 +750,10 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
           categories: [...state.categories, newCat],
           isLoading: false,
         });
+        const uid = await getActiveSupabaseUserId();
+        if (uid) {
+          await supabase.from('categories').upsert({ ...newCat, user_id: uid }).then(() => undefined, () => undefined);
+        }
         await persistLocalSnapshot();
         return newCat;
       } catch (err) {
@@ -702,6 +796,10 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
           categories: state.categories.map((c) => (c.id === categoryId ? updatedCat : c)),
           isLoading: false,
         });
+        const uid = await getActiveSupabaseUserId();
+        if (uid && !updatedCat.is_system) {
+          await supabase.from('categories').upsert({ ...updatedCat, user_id: uid }).then(() => undefined, () => undefined);
+        }
         await persistLocalSnapshot();
         return updatedCat;
       } catch (err) {
@@ -773,6 +871,10 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
           accounts: nextAccounts,
           isLoading: false,
         });
+        const uid = await getActiveSupabaseUserId();
+        if (uid) {
+          await supabase.from('transactions').upsert({ ...newTx, user_id: uid }).then(() => undefined, () => undefined);
+        }
         await persistLocalSnapshot();
         return newTx;
       } catch (err) {
@@ -836,6 +938,10 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
           accounts: nextAccounts,
           isLoading: false,
         });
+        const uid = await getActiveSupabaseUserId();
+        if (uid) {
+          await supabase.from('transactions').upsert({ ...updatedTx, user_id: uid }).then(() => undefined, () => undefined);
+        }
         await persistLocalSnapshot();
         return updatedTx;
       } catch (err) {
@@ -866,6 +972,15 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
           accounts: nextAccounts,
           isLoading: false,
         });
+        const uid = await getActiveSupabaseUserId();
+        if (uid) {
+          await supabase
+            .from('transactions')
+            .delete()
+            .eq('id', transactionId)
+            .eq('user_id', uid)
+            .then(() => undefined, () => undefined);
+        }
         await persistLocalSnapshot();
       } catch (err) {
         const message =
@@ -912,6 +1027,10 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
       set((curr) => ({
         creditCards: [...curr.creditCards, newCard],
       }));
+      const uid = await getActiveSupabaseUserId();
+      if (uid) {
+        await supabase.from('credit_cards').upsert({ ...newCard, user_id: uid }).then(() => undefined, () => undefined);
+      }
       await persistLocalSnapshot();
       return newCard;
     },
@@ -993,6 +1112,10 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
           ? curr.cardInvoices.map((i) => (i.id === invoiceId ? invoiceRow : i))
           : [invoiceRow, ...curr.cardInvoices],
       }));
+      const uid = await getActiveSupabaseUserId();
+      if (uid) {
+        await supabase.from('card_invoices').upsert({ ...invoiceRow, user_id: uid }).then(() => undefined, () => undefined);
+      }
       await persistLocalSnapshot();
 
       return { invoice: invoiceRow, paymentTransaction: paymentTx };
@@ -1188,6 +1311,12 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
           pendingReceiptDraft: null,
           isLoading: false,
         }));
+        const uid = await getActiveSupabaseUserId();
+        if (uid) {
+          await supabase.from('receipts').upsert({ ...newReceipt, user_id: uid }).then(() => undefined, () => undefined);
+          await supabase.from('product_catalog').upsert(updatedCatalog.map((p) => ({ ...p, user_id: uid }))).then(() => undefined, () => undefined);
+          await supabase.from('receipt_items').upsert(createdItems.map((it) => ({ ...it, user_id: uid }))).then(() => undefined, () => undefined);
+        }
         await persistLocalSnapshot();
 
         return {
@@ -1222,6 +1351,15 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
             : prod,
         ),
       }));
+      const uid = await getActiveSupabaseUserId();
+      if (uid) {
+        await supabase
+          .from('product_catalog')
+          .update({ equivalent_group_id: groupId, updated_at: now })
+          .in('id', [...productIds])
+          .eq('user_id', uid)
+          .then(() => undefined, () => undefined);
+      }
       await persistLocalSnapshot();
       return groupId;
     },
@@ -1266,6 +1404,10 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
       set((curr) => ({
         financialGoals: [newGoal, ...curr.financialGoals],
       }));
+      const uid = await getActiveSupabaseUserId();
+      if (uid) {
+        await supabase.from('financial_goals').upsert({ ...newGoal, user_id: uid }).then(() => undefined, () => undefined);
+      }
       await persistLocalSnapshot();
       return newGoal;
     },
@@ -1317,6 +1459,11 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
         ),
         goalsProgress: [progressEntry, ...curr.goalsProgress],
       }));
+      const uid = await getActiveSupabaseUserId();
+      if (uid) {
+        await supabase.from('financial_goals').upsert({ ...updatedGoal, user_id: uid }).then(() => undefined, () => undefined);
+        await supabase.from('goals_progress').upsert({ ...progressEntry, user_id: uid }).then(() => undefined, () => undefined);
+      }
       await persistLocalSnapshot();
       return { goal: updatedGoal, progress: progressEntry };
     },
@@ -1369,6 +1516,19 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
         gamificationEvents: nextEvents,
         userLevel: updatedLevel,
       });
+      const uid = await getActiveSupabaseUserId();
+      if (uid) {
+        await supabase
+          .rpc('record_gamification_event', {
+            p_rule_code: params.ruleCode,
+            p_reason_description: params.reasonDescription,
+            p_points_delta: params.pointsDelta,
+            p_idempotency_key: params.idempotencyKey,
+            p_reference_month: params.referenceMonth ?? null,
+            p_metadata: params.metadata ?? {},
+          })
+          .then(() => undefined, () => undefined);
+      }
       await persistLocalSnapshot();
       return updatedLevel;
     },
@@ -1468,6 +1628,25 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
       ];
 
       set({ aiRecommendations: merged });
+      const uid = await getActiveSupabaseUserId();
+      if (uid) {
+        await supabase.functions
+          .invoke('ai-advisor', {
+            body: {
+              referenceMonth: refYm,
+              deterministicSummary: {
+                recommendationsCount: createdRows.length,
+              },
+            },
+          })
+          .catch(() => undefined);
+        if (createdRows.length > 0) {
+          await supabase
+            .from('ai_recommendations')
+            .upsert(createdRows.map((r) => ({ ...r, user_id: uid })))
+            .then(() => undefined, () => undefined);
+        }
+      }
       await persistLocalSnapshot();
       return merged;
     },
@@ -1506,6 +1685,13 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
           r.id === recommendationId ? updated : r,
         ),
       });
+      const uid = await getActiveSupabaseUserId();
+      if (uid) {
+        await supabase
+          .from('ai_recommendations')
+          .upsert({ ...updated, user_id: uid })
+          .then(() => undefined, () => undefined);
+      }
       await persistLocalSnapshot();
       return updated;
     },
@@ -1545,6 +1731,23 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
       set((curr) => ({
         bankConnections: [conn, ...curr.bankConnections],
       }));
+      const uid = await getActiveSupabaseUserId();
+      if (uid) {
+        await supabase.functions
+          .invoke('open-finance-sync', {
+            body: {
+              action: 'create_connect_token',
+              institutionIspb: input.institutionIspb,
+              institutionName: input.institutionName,
+              grantedScopes: input.grantedScopes,
+            },
+          })
+          .catch(() => undefined);
+        await supabase
+          .from('bank_connections')
+          .upsert({ ...conn, user_id: uid })
+          .then(() => undefined, () => undefined);
+      }
       await persistLocalSnapshot();
       return conn;
     },
@@ -1705,6 +1908,21 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
           c.id === bankConnectionId ? revoked : c,
         ),
       }));
+      const uid = await getActiveSupabaseUserId();
+      if (uid) {
+        await supabase.functions
+          .invoke('open-finance-sync', {
+            body: {
+              action: 'revoke_consent',
+              connectionId: bankConnectionId,
+            },
+          })
+          .catch(() => undefined);
+        await supabase
+          .from('bank_connections')
+          .upsert({ ...revoked, user_id: uid })
+          .then(() => undefined, () => undefined);
+      }
       await persistLocalSnapshot();
       return revoked;
     },
@@ -1718,6 +1936,15 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => {
 
     deleteAllUserDataAndAccount: async () => {
       const uid = get().currentUserId;
+      const supaUid = await getActiveSupabaseUserId();
+      if (supaUid) {
+        await supabase
+          .from('profiles')
+          .delete()
+          .eq('id', supaUid)
+          .then(() => undefined, () => undefined);
+        await supabase.auth.signOut().catch(() => undefined);
+      }
       await AsyncStorage.removeItem(LOCAL_STORAGE_KEY);
       set({
         profile: null,

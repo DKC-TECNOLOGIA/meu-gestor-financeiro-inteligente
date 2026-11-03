@@ -1,6 +1,6 @@
 import { Redirect } from 'expo-router';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { useFinanceStore } from '@/features/finance/use-finance-store';
+import { LoadingState, Screen } from '@/ui';
 
 export default function IndexGateScreen() {
   const isHydrated = useFinanceStore((s) => s.isHydrated);
@@ -8,10 +8,9 @@ export default function IndexGateScreen() {
 
   if (!isHydrated) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#34D399" />
-        <Text style={styles.loadingText}>Carregando seu ambiente financeiro...</Text>
-      </View>
+      <Screen scroll={false}>
+        <LoadingState label="Carregando seu ambiente financeiro..." />
+      </Screen>
     );
   }
 
@@ -21,18 +20,3 @@ export default function IndexGateScreen() {
 
   return <Redirect href="/(tabs)" />;
 }
-
-const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: '#0F172A',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  loadingText: {
-    color: '#94A3B8',
-    fontSize: 15,
-    marginTop: 14,
-  },
-});

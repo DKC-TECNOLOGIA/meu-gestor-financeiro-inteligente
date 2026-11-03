@@ -3,7 +3,7 @@ import { useRouter } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import { Image, Platform, Pressable, Switch, View } from 'react-native';
+import { Alert, Image, Platform, Pressable, Switch, View } from 'react-native';
 import {
   Award,
   Camera,
@@ -11,9 +11,11 @@ import {
   FileSpreadsheet,
   Flame,
   Landmark,
+  LogOut,
   Moon,
   ReceiptText,
   RefreshCw,
+  ShieldAlert,
   SlidersHorizontal,
   Sun,
   Target,
@@ -28,6 +30,7 @@ import {
 } from '@/domain/gamification/gamification-engine';
 import { buildFinancialExcelWorkbook } from '@/domain/xlsx/excel-exporter';
 import { useFinanceStore } from '@/features/finance/use-finance-store';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { formatCurrencyBRL, sumCurrencyExact } from '@/utils/currency';
 import {
   AppText,
@@ -78,6 +81,36 @@ export default function ProfileAndExportScreen() {
   const evaluateCurrentMonthGamification = useFinanceStore(
     (s) => s.evaluateCurrentMonthGamification,
   );
+  const deleteAllUserDataAndAccount = useFinanceStore(
+    (s) => s.deleteAllUserDataAndAccount,
+  );
+
+  const handleSignOut = async () => {
+    if (isSupabaseConfigured) {
+      await supabase.auth.signOut().catch(() => undefined);
+    }
+    router.replace('/(auth)/welcome');
+  };
+
+  const handleConfirmDeleteAccountData = () => {
+    Alert.alert(
+      'Excluir todos os dados (LGPD)',
+      'Esta ação remove permanentemente seus lançamentos, notas fiscais, metas e configurações deste dispositivo. Deseja prosseguir?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Excluir Tudo',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              await deleteAllUserDataAndAccount();
+              router.replace('/(auth)/welcome');
+            })();
+          },
+        },
+      ],
+    );
+  };
 
   const [periodStart, setPeriodStart] = useState(`${filters.referenceYearMonth}-01`);
   const [periodEnd, setPeriodEnd] = useState(`${filters.referenceYearMonth}-31`);
@@ -675,6 +708,30 @@ export default function ProfileAndExportScreen() {
             icon={FileSpreadsheet}
             loading={isExporting}
             onPress={() => void handleExportExcel()}
+          />
+        </Card>
+      </Section>
+
+      {/* Privacidade, Sessão e Direitos do Titular (LGPD) */}
+      <Section>
+        <SectionHeader
+          title="Privacidade, sessão e LGPD"
+          description="Gerencie seu acesso ou exerça o direito de exclusão integral dos seus dados."
+        />
+        <Card style={{ gap: spacing.md }}>
+          <Button
+            label="Alternar conta / Sair da sessão"
+            icon={LogOut}
+            variant="secondary"
+            fullWidth
+            onPress={() => void handleSignOut()}
+          />
+          <Button
+            label="Excluir todos os meus dados (LGPD)"
+            icon={ShieldAlert}
+            variant="danger"
+            fullWidth
+            onPress={handleConfirmDeleteAccountData}
           />
         </Card>
       </Section>

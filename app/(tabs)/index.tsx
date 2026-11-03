@@ -28,7 +28,6 @@ import {
   Card,
   CategoryIcon,
   ChipGroup,
-  colors,
   Divider,
   EmptyState,
   formatYearMonthLabel,
@@ -46,6 +45,7 @@ import {
   Sparkline,
   TransactionKindIcon,
   budgetTone,
+  useThemeColors,
 } from '@/ui';
 
 function getPreviousYearMonth(yearMonth: string): string {
@@ -66,6 +66,7 @@ function formatDelta(value: number, percent: number | null): string {
 
 export default function DashboardScreen() {
   const router = useRouter();
+  const colors = useThemeColors();
   const profile = useFinanceStore((s) => s.profile);
   const avatarUri = useFinanceStore((s) => s.avatarUri);
   const categories = useFinanceStore((s) => s.categories);

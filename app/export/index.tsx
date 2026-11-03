@@ -1,22 +1,39 @@
 import { useState } from 'react';
-import { useRouter } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import {
-  ActivityIndicator,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Platform, View } from 'react-native';
+import { Check, FileSpreadsheet } from 'lucide-react-native';
 import { buildFinancialExcelWorkbook } from '@/domain/xlsx/excel-exporter';
 import { useFinanceStore } from '@/features/finance/use-finance-store';
+import {
+  AppText,
+  Badge,
+  Button,
+  Card,
+  Divider,
+  InlineMessage,
+  Screen,
+  Section,
+  SectionHeader,
+  spacing,
+  TextField,
+  useThemeColors,
+} from '@/ui';
+
+const OFFICIAL_SHEETS = [
+  '1. Resumo financeiro',
+  '2. Receitas',
+  '3. Despesas',
+  '4. Categorias',
+  '5. Compras e notas fiscais',
+  '6. Itens e histórico de preços',
+  '7. Cartões e faturas',
+  '8. Metas financeiras',
+  '9. Evolução mensal',
+];
 
 export default function ExportScreen() {
-  const router = useRouter();
+  const c = useThemeColors();
   const profile = useFinanceStore((s) => s.profile);
   const categories = useFinanceStore((s) => s.categories);
   const transactions = useFinanceStore((s) => s.transactions);
@@ -35,10 +52,12 @@ export default function ExportScreen() {
   );
   const [isExporting, setIsExporting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [isError, setIsError] = useState(false);
 
   const handleGenerateXlsx = async () => {
     setIsExporting(true);
     setStatusMessage(null);
+    setIsError(false);
     try {
       const result = buildFinancialExcelWorkbook({
         periodStart,
@@ -74,6 +93,7 @@ export default function ExportScreen() {
         `Relatório ${result.fileName} gerado com sucesso contendo as ${result.sheetNames.length} abas oficiais!`,
       );
     } catch (err) {
+      setIsError(true);
       setStatusMessage(
         err instanceof Error ? err.message : 'Erro ao exportar arquivo Excel.',
       );
@@ -83,179 +103,81 @@ export default function ExportScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.badge}>TELA 15 • EXPORTAÇÃO PARA EXCEL</Text>
-      <Text style={styles.title}>Exportar Relatório Completo (.XLSX)</Text>
-      <Text style={styles.subtitle}>
-        Gera uma planilha Excel real com cabeçalhos, datas brasileiras, valores
-        monetários (R$) e totais nas 9 abas padronizadas, contendo exclusivamente seus
-        dados autorizados e sem expor credenciais.
-      </Text>
-
+    <Screen
+      header={{
+        title: 'Exportar para Excel (.XLSX)',
+        subtitle:
+          'Planilha real com cabeçalhos, datas brasileiras, valores monetários (R$) e totais nas 9 abas padronizadas.',
+        showBack: true,
+      }}
+      footer={
+        <Button
+          label="Exportar e Baixar Planilha XLSX"
+          icon={FileSpreadsheet}
+          loading={isExporting}
+          fullWidth
+          onPress={() => void handleGenerateXlsx()}
+        />
+      }
+    >
       {statusMessage ? (
-        <View style={styles.statusBox}>
-          <Text style={styles.statusText}>{statusMessage}</Text>
-        </View>
+        <InlineMessage
+          tone={isError ? 'danger' : 'success'}
+          message={statusMessage}
+          style={{ marginBottom: spacing.lg }}
+        />
       ) : null}
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Seleção de Período</Text>
+      <Card style={{ gap: spacing.md }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <AppText variant="heading">Seleção de Período</AppText>
+          <Badge tone="brand" label="PORTABILIDADE LGPD" />
+        </View>
 
-        <Text style={styles.label}>Data Inicial (AAAA-MM-DD)</Text>
-        <TextInput
-          style={styles.input}
-          value={periodStart}
-          onChangeText={setPeriodStart}
-          placeholder="2026-10-01"
-          placeholderTextColor="#64748B"
+        <View style={{ flexDirection: 'row', gap: spacing.md }}>
+          <View style={{ flex: 1 }}>
+            <TextField
+              label="Data Inicial (AAAA-MM-DD)"
+              value={periodStart}
+              onChangeText={setPeriodStart}
+              placeholder="2026-10-01"
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <TextField
+              label="Data Final (AAAA-MM-DD)"
+              value={periodEnd}
+              onChangeText={setPeriodEnd}
+              placeholder="2026-10-31"
+            />
+          </View>
+        </View>
+      </Card>
+
+      <Section>
+        <SectionHeader
+          title="Abas Incluídas no Arquivo .XLSX"
+          description="Contém exclusivamente os seus dados autorizados, sem expor credenciais."
         />
-
-        <Text style={styles.label}>Data Final (AAAA-MM-DD)</Text>
-        <TextInput
-          style={styles.input}
-          value={periodEnd}
-          onChangeText={setPeriodEnd}
-          placeholder="2026-10-31"
-          placeholderTextColor="#64748B"
-        />
-
-        <Text style={styles.sheetsTitle}>Abas incluídas no arquivo .XLSX:</Text>
-        <Text style={styles.sheetItem}>1. Resumo financeiro</Text>
-        <Text style={styles.sheetItem}>2. Receitas</Text>
-        <Text style={styles.sheetItem}>3. Despesas</Text>
-        <Text style={styles.sheetItem}>4. Categorias</Text>
-        <Text style={styles.sheetItem}>5. Compras e notas fiscais</Text>
-        <Text style={styles.sheetItem}>6. Itens e histórico de preços</Text>
-        <Text style={styles.sheetItem}>7. Cartões e faturas</Text>
-        <Text style={styles.sheetItem}>8. Metas financeiras</Text>
-        <Text style={styles.sheetItem}>9. Evolução mensal</Text>
-
-        <Pressable
-          accessibilityRole="button"
-          style={styles.primaryBtn}
-          onPress={() => void handleGenerateXlsx()}
-          disabled={isExporting}
-        >
-          {isExporting ? (
-            <ActivityIndicator color="#052E16" />
-          ) : (
-            <Text style={styles.primaryBtnText}>
-              Exportar e Baixar Planilha XLSX
-            </Text>
-          )}
-        </Pressable>
-      </View>
-
-      <Pressable style={styles.backBtn} onPress={() => router.back()}>
-        <Text style={styles.backBtnText}>Voltar</Text>
-      </Pressable>
-    </ScrollView>
+        <Card style={{ gap: spacing.sm }}>
+          {OFFICIAL_SHEETS.map((sheet, idx) => (
+            <View key={sheet}>
+              {idx > 0 ? <Divider /> : null}
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: spacing.sm,
+                  paddingVertical: spacing.xs,
+                }}
+              >
+                <Check color={c.brand} size={16} />
+                <AppText variant="body">{sheet}</AppText>
+              </View>
+            </View>
+          ))}
+        </Card>
+      </Section>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    backgroundColor: '#0F172A',
-    padding: 18,
-    paddingTop: 44,
-    paddingBottom: 60,
-  },
-  badge: {
-    color: '#34D399',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.1,
-    marginBottom: 4,
-  },
-  title: {
-    color: '#F8FAFC',
-    fontSize: 22,
-    fontWeight: '800',
-    marginBottom: 6,
-  },
-  subtitle: {
-    color: '#94A3B8',
-    fontSize: 12,
-    lineHeight: 18,
-    marginBottom: 14,
-  },
-  statusBox: {
-    backgroundColor: '#064E3B',
-    borderColor: '#10B981',
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 14,
-  },
-  statusText: {
-    color: '#A7F3D0',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  card: {
-    backgroundColor: '#1E293B',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  cardTitle: {
-    color: '#F8FAFC',
-    fontSize: 15,
-    fontWeight: '700',
-    marginBottom: 10,
-  },
-  label: {
-    color: '#E2E8F0',
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 6,
-  },
-  input: {
-    backgroundColor: '#0F172A',
-    borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    color: '#F8FAFC',
-    fontSize: 14,
-    marginBottom: 12,
-  },
-  sheetsTitle: {
-    color: '#38BDF8',
-    fontSize: 12,
-    fontWeight: '700',
-    marginTop: 6,
-    marginBottom: 6,
-  },
-  sheetItem: {
-    color: '#CBD5E1',
-    fontSize: 12,
-    marginBottom: 3,
-  },
-  primaryBtn: {
-    backgroundColor: '#10B981',
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 14,
-  },
-  primaryBtnText: {
-    color: '#052E16',
-    fontWeight: '800',
-    fontSize: 14,
-  },
-  backBtn: {
-    borderWidth: 1,
-    borderColor: '#475569',
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  backBtnText: {
-    color: '#E2E8F0',
-    fontWeight: '700',
-  },
-});

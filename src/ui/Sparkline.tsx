@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { View } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Path, Stop } from 'react-native-svg';
-import { colors } from './theme';
+import { useThemeColors } from './theme';
 
 /**
  * Linha de tendência minimalista (sem eixos). Recebe a série já calculada a
@@ -11,7 +11,7 @@ export function Sparkline({
   values,
   width,
   height = 56,
-  color = colors.accentOnDeep,
+  color,
   fillOpacity = 0.18,
 }: {
   values: readonly number[];
@@ -20,6 +20,8 @@ export function Sparkline({
   color?: string;
   fillOpacity?: number;
 }) {
+  const c = useThemeColors();
+  const resolvedColor = color ?? c.accentOnDeep;
   const geometry = useMemo(() => {
     if (values.length < 2 || width <= 0) return null;
     const min = Math.min(...values);
@@ -55,13 +57,13 @@ export function Sparkline({
     <Svg width={width} height={height}>
       <Defs>
         <LinearGradient id="spark" x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0" stopColor={color} stopOpacity={fillOpacity} />
-          <Stop offset="1" stopColor={color} stopOpacity={0} />
+          <Stop offset="0" stopColor={resolvedColor} stopOpacity={fillOpacity} />
+          <Stop offset="1" stopColor={resolvedColor} stopOpacity={0} />
         </LinearGradient>
       </Defs>
       <Path d={geometry.area} fill="url(#spark)" />
-      <Path d={geometry.d} stroke={color} strokeWidth={2} fill="none" strokeLinecap="round" />
-      <Circle cx={geometry.last.x} cy={geometry.last.y} r={3.5} fill={color} />
+      <Path d={geometry.d} stroke={resolvedColor} strokeWidth={2} fill="none" strokeLinecap="round" />
+      <Circle cx={geometry.last.x} cy={geometry.last.y} r={3.5} fill={resolvedColor} />
     </Svg>
   );
 }

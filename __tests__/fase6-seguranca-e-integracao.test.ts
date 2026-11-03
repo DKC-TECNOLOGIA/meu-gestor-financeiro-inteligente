@@ -82,14 +82,30 @@ describe('Fase 6 — Testes de Isolamento entre Usuários, Acesso Não Autorizad
     ];
 
     it.each(requiredScreenFiles)(
-      'deve possuir o arquivo da tela %s implementado e não vazio',
+      'deve possuir o arquivo da tela %s implementado, não vazio e integrado ao Design System @/ui',
       (relativePath) => {
         const fullPath = path.join(projectRoot, relativePath);
         expect(fs.existsSync(fullPath)).toBe(true);
         const content = fs.readFileSync(fullPath, 'utf8');
         expect(content.length).toBeGreaterThan(200);
+        expect(content).toContain("from '@/ui'");
       },
     );
+  });
+
+  describe('2b. Tema Claro/Escuro e Meta Mensal no Store', () => {
+    it('deve alternar entre tema claro e escuro e persistir meta mensal personalizada', () => {
+      const store = useFinanceStore.getState();
+      store.setThemeMode('dark');
+      expect(useFinanceStore.getState().themeMode).toBe('dark');
+      store.setThemeMode('light');
+      expect(useFinanceStore.getState().themeMode).toBe('light');
+
+      store.setMonthlyObjectiveTargetAmount(1500);
+      expect(useFinanceStore.getState().monthlyObjectiveTargetAmount).toBe(1500);
+      store.setMonthlyObjectiveTargetAmount(null);
+      expect(useFinanceStore.getState().monthlyObjectiveTargetAmount).toBeNull();
+    });
   });
 
   describe('3. Verificação das Supabase Edge Functions e Configuração de Build AAB/APK (Seção 3 e 16)', () => {

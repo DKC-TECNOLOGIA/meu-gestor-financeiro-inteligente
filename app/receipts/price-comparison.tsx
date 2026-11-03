@@ -1,12 +1,27 @@
 import { useMemo, useState } from 'react';
-import { useRouter } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { View } from 'react-native';
+import { BarChart3, Link2 } from 'lucide-react-native';
 import {
   areUnitsCompatible,
   compareCatalogPricesByMonth,
 } from '@/domain/price-comparison/price-analyzer';
 import { useFinanceStore } from '@/features/finance/use-finance-store';
 import { formatCurrencyBRL } from '@/utils/currency';
+import {
+  AppText,
+  Badge,
+  Button,
+  Card,
+  Chip,
+  Divider,
+  EmptyState,
+  InlineMessage,
+  MonthSwitcher,
+  Screen,
+  Section,
+  SectionHeader,
+  spacing,
+} from '@/ui';
 
 function getPreviousYearMonth(yearMonth: string): string {
   const parts = yearMonth.split('-');
@@ -19,14 +34,15 @@ function getPreviousYearMonth(yearMonth: string): string {
 }
 
 export default function PriceComparisonScreen() {
-  const router = useRouter();
   const receiptItems = useFinanceStore((s) => s.receiptItems);
   const productCatalog = useFinanceStore((s) => s.productCatalog);
   const filters = useFinanceStore((s) => s.filters);
+  const setReferenceYearMonth = useFinanceStore((s) => s.setReferenceYearMonth);
   const linkEquivalentProducts = useFinanceStore((s) => s.linkEquivalentProducts);
 
   const [selectedProdIds, setSelectedProdIds] = useState<string[]>([]);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [isError, setIsError] = useState(false);
 
   const previousYearMonth = useMemo(
     () => getPreviousYearMonth(filters.referenceYearMonth),
@@ -52,7 +68,9 @@ export default function PriceComparisonScreen() {
 
   const handleLinkSelected = async () => {
     setStatusMessage(null);
+    setIsError(false);
     if (selectedProdIds.length < 2) {
+      setIsError(true);
       setStatusMessage(
         'Selecione pelo menos 2 produtos compatíveis abaixo para vincular como equivalentes.',
       );
@@ -68,6 +86,7 @@ export default function PriceComparisonScreen() {
     );
 
     if (!allCompatible) {
+      setIsError(true);
       setStatusMessage(
         'Não é permitido associar produtos com unidades de medida incompatíveis (ex.: KG com L).',
       );
@@ -81,6 +100,7 @@ export default function PriceComparisonScreen() {
         'Produtos associados como equivalentes com sucesso! O comparativo histórico foi recalculado.',
       );
     } catch (err) {
+      setIsError(true);
       setStatusMessage(
         err instanceof Error ? err.message : 'Erro ao associar produtos.',
       );
@@ -88,264 +108,117 @@ export default function PriceComparisonScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.badge}>TELA 10 • CATÁLOGO E COMPARAÇÃO DE PREÇOS</Text>
-      <Text style={styles.title}>
-        Variação de Preços ({previousYearMonth} → {filters.referenceYearMonth})
-      </Text>
-      <Text style={styles.subtitle}>
-        Comparamos apenas unidades compatíveis (normalizando G para KG e ML para L).
-        Quando não há compras nos dois meses, exibimos &quot;sem dados
-        suficientes&quot;.
-      </Text>
+    <Screen
+      header={{
+        title: 'Comparação de Preços',
+        subtitle: `Variação entre ${previousYearMonth} e ${filters.referenceYearMonth} apenas entre unidades compatíveis (KG↔G, L↔ML, UN).`,
+        showBack: true,
+      }}
+    >
+      <View style={{ alignItems: 'center', marginBottom: spacing.md }}>
+        <MonthSwitcher
+          value={filters.referenceYearMonth}
+          onChange={setReferenceYearMonth}
+        />
+      </View>
 
       {statusMessage ? (
-        <View style={styles.statusBox}>
-          <Text style={styles.statusText}>{statusMessage}</Text>
-        </View>
+        <InlineMessage
+          tone={isError ? 'danger' : 'success'}
+          message={statusMessage}
+          style={{ marginBottom: spacing.lg }}
+        />
       ) : null}
 
       {/* Resultados da Comparação Mensal */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>
-          Produtos Analisados ({comparisons.length})
-        </Text>
+      <Card padded={false} style={{ paddingHorizontal: spacing.lg }}>
         {comparisons.length === 0 ? (
-          <Text style={styles.emptyText}>
-            Nenhum item de nota fiscal registrado ainda. Importe uma NFC-e para comparar
-            preços entre meses e estabelecimentos.
-          </Text>
+          <EmptyState
+            icon={BarChart3}
+            title="Nenhum item de nota fiscal registrado ainda"
+            description="Importe uma NFC-e para comparar preços entre meses e estabelecimentos."
+          />
         ) : (
-          comparisons.map((comp) => {
-            const deltaColor =
+          comparisons.map((comp, idx) => {
+            const badgeTone =
               !comp.hasSufficientHistory || comp.absoluteDelta == null
-                ? '#94A3B8'
+                ? 'neutral'
                 : comp.absoluteDelta > 0
-                  ? '#F87171'
+                  ? 'negative'
                   : comp.absoluteDelta < 0
-                    ? '#34D399'
-                    : '#E2E8F0';
+                    ? 'positive'
+                    : 'brand';
 
             return (
-              <View key={comp.comparisonGroupKey} style={styles.compItem}>
-                <View style={styles.compHeader}>
-                  <Text style={styles.compName}>
-                    {comp.productDisplayName} ({comp.baseUnit})
-                  </Text>
-                  <Text style={[styles.compBadge, { color: deltaColor }]}>
-                    {comp.statusLabel}
-                  </Text>
+              <View key={comp.comparisonGroupKey}>
+                {idx > 0 ? <Divider /> : null}
+                <View style={{ paddingVertical: spacing.md, gap: 4 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.sm }}>
+                    <AppText variant="bodyStrong" style={{ flex: 1 }}>
+                      {comp.productDisplayName} ({comp.baseUnit})
+                    </AppText>
+                    <Badge tone={badgeTone} label={comp.statusLabel} />
+                  </View>
+
+                  <AppText variant="caption" tone="secondary">
+                    Mês anterior ({previousYearMonth}):{' '}
+                    {comp.previousMonthAvgPrice != null
+                      ? formatCurrencyBRL(comp.previousMonthAvgPrice)
+                      : 'Sem registro'}{' '}
+                    · Mês atual ({filters.referenceYearMonth}):{' '}
+                    {comp.currentMonthAvgPrice != null
+                      ? formatCurrencyBRL(comp.currentMonthAvgPrice)
+                      : 'Sem registro'}
+                  </AppText>
+
+                  {comp.hasSufficientHistory && comp.absoluteDelta != null ? (
+                    <AppText
+                      variant="caption"
+                      tone={comp.absoluteDelta > 0 ? 'negative' : comp.absoluteDelta < 0 ? 'positive' : 'secondary'}
+                    >
+                      Variação em reais: {comp.absoluteDelta >= 0 ? '+' : ''}
+                      {formatCurrencyBRL(comp.absoluteDelta)} por {comp.baseUnit}
+                    </AppText>
+                  ) : null}
+
+                  <AppText variant="caption" tone="tertiary">
+                    Menor preço: {formatCurrencyBRL(comp.minObservedPrice)} ({comp.minPriceMerchant}) · Maior preço:{' '}
+                    {formatCurrencyBRL(comp.maxObservedPrice)} ({comp.maxPriceMerchant})
+                  </AppText>
                 </View>
-
-                <Text style={styles.compMeta}>
-                  Mês anterior ({previousYearMonth}):{' '}
-                  {comp.previousMonthAvgPrice != null
-                    ? formatCurrencyBRL(comp.previousMonthAvgPrice)
-                    : 'Sem registro'}{' '}
-                  • Mês atual ({filters.referenceYearMonth}):{' '}
-                  {comp.currentMonthAvgPrice != null
-                    ? formatCurrencyBRL(comp.currentMonthAvgPrice)
-                    : 'Sem registro'}
-                </Text>
-
-                {comp.hasSufficientHistory && comp.absoluteDelta != null ? (
-                  <Text style={styles.compMeta}>
-                    Variação em reais:{' '}
-                    {comp.absoluteDelta >= 0 ? '+' : ''}
-                    {formatCurrencyBRL(comp.absoluteDelta)} por {comp.baseUnit}
-                  </Text>
-                ) : null}
-
-                <Text style={styles.compExtremes}>
-                  Menor preço: {formatCurrencyBRL(comp.minObservedPrice)} (
-                  {comp.minPriceMerchant}) • Maior preço:{' '}
-                  {formatCurrencyBRL(comp.maxObservedPrice)} ({comp.maxPriceMerchant})
-                </Text>
               </View>
             );
           })
         )}
-      </View>
+      </Card>
 
-      {/* Associação Manual de Produtos Equivalentes (Seção 7) */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>
-          Associar Produtos Equivalentes Manualmente
-        </Text>
-        <Text style={styles.subtitle}>
-          Se o mesmo produto veio com descrições abreviadas diferentes em dois
-          supermercados, selecione-os abaixo para unificar o histórico:
-        </Text>
-
-        <View style={styles.chipsRow}>
-          {productCatalog.map((prod) => {
-            const selected = selectedProdIds.includes(prod.id);
-            return (
-              <Pressable
+      {/* Associação Manual de Produtos Equivalentes */}
+      <Section>
+        <SectionHeader
+          title="Associar Produtos Equivalentes"
+          description="Se o mesmo produto veio com descrições abreviadas diferentes em dois mercados, selecione-os abaixo para unificar o histórico."
+        />
+        <Card style={{ gap: spacing.md }}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+            {productCatalog.map((prod) => (
+              <Chip
                 key={prod.id}
-                style={[styles.chip, selected && styles.chipActive]}
+                label={`${prod.normalized_name} (${prod.measurement_unit})`}
+                selected={selectedProdIds.includes(prod.id)}
                 onPress={() => toggleProductSelection(prod.id)}
-              >
-                <Text style={[styles.chipText, selected && styles.chipTextActive]}>
-                  {prod.normalized_name} ({prod.measurement_unit})
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+              />
+            ))}
+          </View>
 
-        <Pressable
-          style={styles.linkBtn}
-          onPress={() => void handleLinkSelected()}
-        >
-          <Text style={styles.linkBtnText}>
-            Vincular Selecionados como Produto Equivalente
-          </Text>
-        </Pressable>
-      </View>
-
-      <Pressable style={styles.backBtn} onPress={() => router.back()}>
-        <Text style={styles.backBtnText}>Voltar ao Leitor de Notas</Text>
-      </Pressable>
-    </ScrollView>
+          <Button
+            label="Vincular Selecionados como Equivalentes"
+            icon={Link2}
+            variant="secondary"
+            fullWidth
+            onPress={() => void handleLinkSelected()}
+          />
+        </Card>
+      </Section>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    backgroundColor: '#0F172A',
-    padding: 18,
-    paddingTop: 44,
-    paddingBottom: 60,
-  },
-  badge: {
-    color: '#38BDF8',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.1,
-    marginBottom: 4,
-  },
-  title: {
-    color: '#F8FAFC',
-    fontSize: 21,
-    fontWeight: '800',
-    marginBottom: 6,
-  },
-  subtitle: {
-    color: '#94A3B8',
-    fontSize: 12,
-    lineHeight: 18,
-    marginBottom: 14,
-  },
-  statusBox: {
-    backgroundColor: '#064E3B',
-    borderColor: '#10B981',
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 14,
-  },
-  statusText: {
-    color: '#A7F3D0',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  card: {
-    backgroundColor: '#1E293B',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  cardTitle: {
-    color: '#F8FAFC',
-    fontSize: 15,
-    fontWeight: '700',
-    marginBottom: 10,
-  },
-  emptyText: {
-    color: '#94A3B8',
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  compItem: {
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#334155',
-  },
-  compHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  compName: {
-    color: '#F8FAFC',
-    fontSize: 14,
-    fontWeight: '700',
-    flex: 1,
-  },
-  compBadge: {
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  compMeta: {
-    color: '#CBD5E1',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  compExtremes: {
-    color: '#94A3B8',
-    fontSize: 11,
-    marginTop: 4,
-  },
-  chipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 12,
-  },
-  chip: {
-    backgroundColor: '#0F172A',
-    borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  chipActive: {
-    backgroundColor: '#38BDF8',
-    borderColor: '#38BDF8',
-  },
-  chipText: {
-    color: '#CBD5E1',
-    fontSize: 11,
-  },
-  chipTextActive: {
-    color: '#082F49',
-    fontWeight: '800',
-  },
-  linkBtn: {
-    backgroundColor: '#38BDF8',
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  linkBtnText: {
-    color: '#082F49',
-    fontWeight: '800',
-    fontSize: 13,
-  },
-  backBtn: {
-    borderWidth: 1,
-    borderColor: '#475569',
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  backBtnText: {
-    color: '#E2E8F0',
-    fontWeight: '700',
-  },
-});

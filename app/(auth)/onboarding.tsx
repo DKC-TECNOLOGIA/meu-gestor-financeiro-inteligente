@@ -1,15 +1,7 @@
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Pressable, Switch, View } from 'react-native';
+import { Check, Mail, ShieldCheck, UserRound } from 'lucide-react-native';
 import {
   FINANCIAL_OBJECTIVE_OPTIONS,
   INITIAL_SYSTEM_CATEGORIES,
@@ -20,6 +12,23 @@ import {
   IncomeFrequencyType,
   TrackingProfileType,
 } from '@/types/database.types';
+import {
+  AppText,
+  Badge,
+  BrandLogo,
+  Button,
+  Card,
+  Chip,
+  InlineMessage,
+  radius,
+  Screen,
+  Section,
+  SectionHeader,
+  SegmentedControl,
+  spacing,
+  TextField,
+  useThemeColors,
+} from '@/ui';
 
 function parseOptionalCurrency(text: string): number | null {
   const cleaned = text.trim().replace(/\./g, '').replace(',', '.');
@@ -30,6 +39,7 @@ function parseOptionalCurrency(text: string): number | null {
 
 export default function OnboardingScreen() {
   const router = useRouter();
+  const c = useThemeColors();
   const existingProfile = useFinanceStore((s) => s.profile);
   const completeOnboarding = useFinanceStore((s) => s.completeOnboardingAndSaveProfile);
   const isLoading = useFinanceStore((s) => s.isLoading);
@@ -114,53 +124,77 @@ export default function OnboardingScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.headerBadge}>PASSO INICIAL • PERSONALIZAÇÃO</Text>
-      <Text style={styles.title}>Cadastro e Definição de Objetivos</Text>
-      <Text style={styles.privacyNotice}>
-        Finalidade dos dados: utilizamos estas informações exclusivamente para calibrar
-        seus alertas de orçamento, calcular sua taxa de poupança e personalizar o
-        Orientador Financeiro. Campos de renda, dívidas e reserva são opcionais e podem
-        ser alterados a qualquer momento no seu Perfil.
-      </Text>
+    <Screen
+      header={{
+        title: 'Objetivos e Perfil Financeiro',
+        subtitle: 'Personalize seus alertas de orçamento, metas e recomendações.',
+        showBack: Boolean(existingProfile?.onboarding_completed),
+      }}
+      footer={
+        <Button
+          label="Salvar e Ir para o Dashboard"
+          icon={Check}
+          loading={isLoading}
+          fullWidth
+          onPress={() => void handleSave()}
+        />
+      }
+    >
+      <View
+        style={{
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: spacing.md,
+        }}
+      >
+        <BrandLogo size={34} />
+        <Badge tone="brand" label="PERSONALIZAÇÃO" />
+      </View>
+
+      <InlineMessage
+        tone="info"
+        title="Finalidade e Minimização de Dados (LGPD)"
+        message="Utilizamos estas informações exclusivamente para calibrar seus alertas de orçamento, calcular sua taxa de poupança e personalizar o Orientador Financeiro. Campos de renda, dívidas e reserva são opcionais."
+        style={{ marginBottom: spacing.lg }}
+      />
 
       {localError ? (
-        <View style={styles.errorBox}>
-          <Text style={styles.errorText}>{localError}</Text>
-        </View>
+        <InlineMessage
+          tone="danger"
+          message={localError}
+          style={{ marginBottom: spacing.lg }}
+        />
       ) : null}
 
       {/* 1. Identificação */}
-      <View style={styles.sectionCard}>
-        <Text style={styles.sectionTitle}>1. Identificação</Text>
-        <Text style={styles.label}>Nome de exibição *</Text>
-        <TextInput
-          style={styles.input}
+      <Card style={{ gap: spacing.md }}>
+        <AppText variant="heading">1. Identificação</AppText>
+        <TextField
+          label="Nome de exibição *"
+          icon={UserRound}
           placeholder="Como prefere ser chamado(a)?"
-          placeholderTextColor="#64748B"
           value={displayName}
           onChangeText={setDisplayName}
         />
-
-        <Text style={styles.label}>E-mail principal *</Text>
-        <TextInput
-          style={styles.input}
+        <TextField
+          label="E-mail principal *"
+          icon={Mail}
           placeholder="voce@exemplo.com.br"
-          placeholderTextColor="#64748B"
           keyboardType="email-address"
           autoCapitalize="none"
           value={email}
           onChangeText={setEmail}
         />
-      </View>
+      </Card>
 
       {/* 2. Objetivo Financeiro Principal (10 opções) */}
-      <View style={styles.sectionCard}>
-        <Text style={styles.sectionTitle}>2. Objetivo Financeiro Principal *</Text>
-        <Text style={styles.helperText}>
-          Escolha a prioridade número 1 para direcionar suas metas e recomendações:
-        </Text>
-        <View style={styles.optionsGrid}>
+      <Section>
+        <SectionHeader
+          title="2. Objetivo Financeiro Principal *"
+          description="Escolha a prioridade número 1 para direcionar suas metas e recomendações."
+        />
+        <View style={{ gap: spacing.sm }}>
           {FINANCIAL_OBJECTIVE_OPTIONS.map((opt) => {
             const selected = primaryObjective === opt.value;
             return (
@@ -168,345 +202,167 @@ export default function OnboardingScreen() {
                 key={opt.value}
                 accessibilityRole="radio"
                 accessibilityState={{ checked: selected }}
-                style={[styles.optionCard, selected && styles.optionCardSelected]}
                 onPress={() => setPrimaryObjective(opt.value)}
+                style={{
+                  backgroundColor: selected ? c.brandSoft : c.surface,
+                  borderRadius: radius.lg,
+                  padding: spacing.lg,
+                  borderWidth: selected ? 1.5 : 1,
+                  borderColor: selected ? c.brand : c.border,
+                  gap: 4,
+                }}
               >
-                <Text
-                  style={[styles.optionLabel, selected && styles.optionLabelSelected]}
-                >
-                  {opt.label}
-                </Text>
-                <Text style={styles.optionDesc}>{opt.description}</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <AppText
+                    variant="bodyStrong"
+                    tone={selected ? 'brand' : 'default'}
+                    style={{ flex: 1 }}
+                  >
+                    {opt.label}
+                  </AppText>
+                  {selected ? <Check color={c.brand} size={18} /> : null}
+                </View>
+                <AppText variant="caption" tone="secondary">
+                  {opt.description}
+                </AppText>
               </Pressable>
             );
           })}
         </View>
 
         {primaryObjective === 'custom' ? (
-          <View style={{ marginTop: 12 }}>
-            <Text style={styles.label}>Descreva seu objetivo personalizado *</Text>
-            <TextInput
-              style={styles.input}
+          <Card style={{ marginTop: spacing.md }}>
+            <TextField
+              label="Descreva seu objetivo personalizado *"
               placeholder="Ex.: Quitar pós-graduação até dezembro"
-              placeholderTextColor="#64748B"
               value={customObjectiveDescription}
               onChangeText={setCustomObjectiveDescription}
             />
-          </View>
+          </Card>
         ) : null}
-      </View>
+      </Section>
 
       {/* 3. Contexto Financeiro (Opcional) */}
-      <View style={styles.sectionCard}>
-        <Text style={styles.sectionTitle}>
-          3. Panorama Financeiro (Opcional — Você decide o que informar)
-        </Text>
-
-        <Text style={styles.label}>Renda mensal líquida aproximada (R$ — Opcional)</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Ex.: 4500,00 (deixe em branco se preferir)"
-          placeholderTextColor="#64748B"
-          keyboardType="numeric"
-          value={monthlyNetIncomeText}
-          onChangeText={setMonthlyNetIncomeText}
+      <Section>
+        <SectionHeader
+          title="3. Panorama Financeiro (Opcional)"
+          description="Você decide o que informar. Deixe em branco o que preferir não preencher."
         />
+        <Card style={{ gap: spacing.md }}>
+          <TextField
+            label="Renda mensal líquida aproximada (Opcional)"
+            prefix="R$"
+            placeholder="Ex.: 4500,00"
+            keyboardType="numeric"
+            value={monthlyNetIncomeText}
+            onChangeText={setMonthlyNetIncomeText}
+          />
 
-        <Text style={styles.label}>Frequência de recebimento</Text>
-        <View style={styles.chipsRow}>
-          {(
-            [
-              { value: 'monthly', label: 'Mensal' },
-              { value: 'biweekly', label: 'Quinzenal' },
-              { value: 'weekly', label: 'Semanal' },
-              { value: 'variable', label: 'Variável/Autônomo' },
-            ] as const
-          ).map((freq) => {
-            const active = incomeFrequency === freq.value;
-            return (
-              <Pressable
-                key={freq.value}
-                style={[styles.chip, active && styles.chipActive]}
-                onPress={() => setIncomeFrequency(freq.value)}
-              >
-                <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                  {freq.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+          <View style={{ gap: spacing.xs }}>
+            <AppText variant="label" tone="secondary">
+              Frequência de recebimento
+            </AppText>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+              {(
+                [
+                  { value: 'monthly', label: 'Mensal' },
+                  { value: 'biweekly', label: 'Quinzenal' },
+                  { value: 'weekly', label: 'Semanal' },
+                  { value: 'variable', label: 'Variável/Autônomo' },
+                ] as const
+              ).map((freq) => (
+                <Chip
+                  key={freq.value}
+                  label={freq.label}
+                  selected={incomeFrequency === freq.value}
+                  onPress={() => setIncomeFrequency(freq.value)}
+                />
+              ))}
+            </View>
+          </View>
 
-        <Text style={styles.label}>Despesas fixas aproximadas (R$ — Opcional)</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Ex.: 2200,00"
-          placeholderTextColor="#64748B"
-          keyboardType="numeric"
-          value={approxFixedExpensesText}
-          onChangeText={setApproxFixedExpensesText}
-        />
+          <TextField
+            label="Despesas fixas aproximadas (Opcional)"
+            prefix="R$"
+            placeholder="Ex.: 2200,00"
+            keyboardType="numeric"
+            value={approxFixedExpensesText}
+            onChangeText={setApproxFixedExpensesText}
+          />
 
-        <Text style={styles.label}>Dívidas e parcelas mensais (R$ — Opcional)</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Ex.: 450,00"
-          placeholderTextColor="#64748B"
-          keyboardType="numeric"
-          value={monthlyDebtInstallmentsText}
-          onChangeText={setMonthlyDebtInstallmentsText}
-        />
+          <TextField
+            label="Dívidas e parcelas mensais (Opcional)"
+            prefix="R$"
+            placeholder="Ex.: 450,00"
+            keyboardType="numeric"
+            value={monthlyDebtInstallmentsText}
+            onChangeText={setMonthlyDebtInstallmentsText}
+          />
 
-        <Text style={styles.label}>Reserva financeira atual (R$ — Opcional)</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Ex.: 3000,00"
-          placeholderTextColor="#64748B"
-          keyboardType="numeric"
-          value={currentEmergencyFundText}
-          onChangeText={setCurrentEmergencyFundText}
-        />
-      </View>
+          <TextField
+            label="Reserva financeira atual (Opcional)"
+            prefix="R$"
+            placeholder="Ex.: 3000,00"
+            keyboardType="numeric"
+            value={currentEmergencyFundText}
+            onChangeText={setCurrentEmergencyFundText}
+          />
+        </Card>
+      </Section>
 
       {/* 4. Perfil de Acompanhamento e Categorias */}
-      <View style={styles.sectionCard}>
-        <Text style={styles.sectionTitle}>4. Perfil e Categorias de Acompanhamento</Text>
-        <Text style={styles.label}>Nível de detalhe desejado</Text>
-        <View style={styles.chipsRow}>
-          {(
-            [
-              { value: 'essential', label: 'Essencial (Rápido)' },
+      <Section>
+        <SectionHeader
+          title="4. Perfil e Categorias de Acompanhamento"
+          description="Escolha o nível de detalhe e quais categorias deseja monitorar."
+        />
+        <Card style={{ gap: spacing.md }}>
+          <SegmentedControl
+            value={trackingProfile}
+            onChange={setTrackingProfile}
+            options={[
+              { value: 'essential', label: 'Essencial' },
               { value: 'balanced', label: 'Equilibrado' },
-              { value: 'detailed', label: 'Detalhado (Analítico)' },
-            ] as const
-          ).map((prof) => {
-            const active = trackingProfile === prof.value;
-            return (
-              <Pressable
-                key={prof.value}
-                style={[styles.chip, active && styles.chipActive]}
-                onPress={() => setTrackingProfile(prof.value)}
-              >
-                <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                  {prof.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+              { value: 'detailed', label: 'Detalhado' },
+            ]}
+          />
 
-        <Text style={styles.label}>
-          Categorias que deseja acompanhar ({trackedCategorySlugs.length} selecionadas) *
-        </Text>
-        <View style={styles.chipsRow}>
-          {INITIAL_SYSTEM_CATEGORIES.map((cat) => {
-            const active = trackedCategorySlugs.includes(cat.slug);
-            return (
-              <Pressable
+          <AppText variant="label" tone="secondary">
+            Categorias selecionadas ({trackedCategorySlugs.length}) *
+          </AppText>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+            {INITIAL_SYSTEM_CATEGORIES.map((cat) => (
+              <Chip
                 key={cat.slug}
-                style={[styles.chip, active && styles.chipActive]}
+                label={cat.name}
+                selected={trackedCategorySlugs.includes(cat.slug)}
                 onPress={() => toggleCategorySlug(cat.slug)}
-              >
-                <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                  {cat.name}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
+              />
+            ))}
+          </View>
+        </Card>
+      </Section>
 
       {/* 5. Consentimento de Privacidade */}
-      <View style={styles.consentRow}>
-        <Switch
-          value={privacyAccepted}
-          onValueChange={setPrivacyAccepted}
-          trackColor={{ false: '#334155', true: '#10B981' }}
-        />
-        <Text style={styles.consentText}>
-          Compreendo a finalidade dos dados e concordo com a Política de Privacidade
-          (meus dados financeiros não são compartilhados nem usados para treinar IA).
-        </Text>
-      </View>
-
-      <Pressable
-        accessibilityRole="button"
-        style={styles.submitButton}
-        onPress={() => void handleSave()}
-        disabled={isLoading}
-      >
-        {isLoading ? (
-          <ActivityIndicator color="#052E16" />
-        ) : (
-          <Text style={styles.submitButtonText}>Salvar e Ir para o Dashboard</Text>
-        )}
-      </Pressable>
-    </ScrollView>
+      <Section>
+        <Card>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+            <ShieldCheck color={c.brand} size={22} />
+            <View style={{ flex: 1 }}>
+              <AppText variant="label">
+                Compreendo a finalidade dos dados e concordo com a Política de Privacidade
+                (meus dados financeiros não são compartilhados nem usados para treinar IA).
+              </AppText>
+            </View>
+            <Switch
+              accessibilityLabel="Concordar com a Política de Privacidade"
+              value={privacyAccepted}
+              onValueChange={setPrivacyAccepted}
+              trackColor={{ false: c.borderStrong, true: c.brand }}
+            />
+          </View>
+        </Card>
+      </Section>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    backgroundColor: '#0F172A',
-    padding: 20,
-    paddingBottom: 48,
-  },
-  headerBadge: {
-    color: '#34D399',
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 1.1,
-    marginTop: 16,
-    marginBottom: 6,
-  },
-  title: {
-    color: '#F8FAFC',
-    fontSize: 24,
-    fontWeight: '800',
-    marginBottom: 10,
-  },
-  privacyNotice: {
-    color: '#94A3B8',
-    fontSize: 13,
-    lineHeight: 19,
-    backgroundColor: '#1E293B',
-    padding: 14,
-    borderRadius: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: '#38BDF8',
-    marginBottom: 18,
-  },
-  errorBox: {
-    backgroundColor: '#450A0A',
-    borderColor: '#EF4444',
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 16,
-  },
-  errorText: {
-    color: '#FCA5A5',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  sectionCard: {
-    backgroundColor: '#1E293B',
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 18,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  sectionTitle: {
-    color: '#F8FAFC',
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 12,
-  },
-  helperText: {
-    color: '#94A3B8',
-    fontSize: 13,
-    marginBottom: 12,
-  },
-  label: {
-    color: '#E2E8F0',
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 6,
-    marginTop: 6,
-  },
-  input: {
-    backgroundColor: '#0F172A',
-    borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    color: '#F8FAFC',
-    fontSize: 15,
-    marginBottom: 10,
-  },
-  optionsGrid: {
-    gap: 10,
-  },
-  optionCard: {
-    backgroundColor: '#0F172A',
-    borderRadius: 12,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  optionCardSelected: {
-    borderColor: '#10B981',
-    backgroundColor: '#064E3B',
-  },
-  optionLabel: {
-    color: '#F8FAFC',
-    fontSize: 15,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  optionLabelSelected: {
-    color: '#6EE7B7',
-  },
-  optionDesc: {
-    color: '#CBD5E1',
-    fontSize: 12,
-    lineHeight: 17,
-  },
-  chipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 12,
-  },
-  chip: {
-    backgroundColor: '#0F172A',
-    borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  chipActive: {
-    backgroundColor: '#10B981',
-    borderColor: '#10B981',
-  },
-  chipText: {
-    color: '#CBD5E1',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  chipTextActive: {
-    color: '#052E16',
-    fontWeight: '800',
-  },
-  consentRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#1E293B',
-    padding: 16,
-    borderRadius: 14,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  consentText: {
-    flex: 1,
-    color: '#CBD5E1',
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  submitButton: {
-    backgroundColor: '#10B981',
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  submitButtonText: {
-    color: '#052E16',
-    fontSize: 16,
-    fontWeight: '800',
-  },
-});
